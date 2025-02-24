@@ -36,18 +36,39 @@
                     <option value="3m-5m">3 a 5 minutos</option>
                     <option value="5m-10m">5 a 10 minutos</option>
                     <option value="10m-15m">10 a 15 minutos</option>
-                    <option value="15m-20m">15 a 20 minutos</option>
-                    <option value="20m-25m">20 a 25 minutos</option>
                 </select>
             
                 <!-- Botão de envio -->
                 <button type="submit">Gerar Clips</button>
             </form>
+
+            <!-- Barra de progresso -->
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            </div>
+
+            <!-- Seção para exibir os clipes gerados -->
+            <div id="results">
+                <h2>Clipes Gerados</h2>
+                <div id="clips-container">
+                    {% if clips_data %}
+                        {% for clip in clips_data %}
+                            <video src="{{ clip.url }}" controls width="300"></video>
+                            <a href="{{ clip.url }}" download="{{ clip.url.split('/')[-1] }}" class="download-link">Download Clip</a>
+                            <p>{{ clip.transcription }}</p>
+                        {% endfor %}
+                    {% else %}
+                        <p>Nenhum clipe gerado ainda.</p>
+                    {% endif %}
+                </div>
+            </div>
         </main>
 
         <footer>
             <p>&copy; 2023 Clip Generator. Todos os direitos reservados.</p>
         </footer>
     </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

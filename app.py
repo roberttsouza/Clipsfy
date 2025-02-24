@@ -1,10 +1,13 @@
 from flask import Flask, render_template, request, jsonify
+from supabase import create_client, Client
 import os
 import subprocess
 import yt_dlp
 import whisper
 import google.generativeai as genai
 from dotenv import load_dotenv
+import os
+
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -16,6 +19,35 @@ app = Flask(__name__)
 DOWNLOADS_DIR = "downloads"
 if not os.path.exists(DOWNLOADS_DIR):
     os.makedirs(DOWNLOADS_DIR)
+
+
+# Configurações do Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Função para registrar um novo usuário
+def register_user(username, email, password_hash):
+    response = supabase.table("users").insert({
+        "username": username,
+        "email": email,
+        "password_hash": password_hash
+    }).execute()
+    return response.data
+
+# Função para autenticar um usuário
+def authenticate_user(email, password_hash):
+    response = supabase.table("users").select("*").eq("email", email).eq("password_hash", password_hash).execute()
+    return response.data
+
+# Função para salvar clipes no banco de dados
+def save_clip(user_id, clip_url, transcription):
+    response = supabase.table("clips").insert({
+        "user_id": user_id,
+        "clip_url": clip_url,
+        "transcription": transcription
+    }).execute()
+    return response.data
 
 # Função para baixar vídeos do YouTube usando yt-dlp
 def download_youtube_video(video_url, output_path="downloads"):
@@ -136,7 +168,7 @@ def get_video_duration(video_path):
         return None
 
 # Função para gerar clipes com base nos timestamps
-def generate_clips(video_path, analysis, clip_format, clip_duration):
+def generate_clips(video_path, analysis, clip_format, clip_duration, full_transcription):
     """
     Gera clipes com base nos timestamps identificados na análise, respeitando o formato e a duração escolhidos.
     
@@ -144,6 +176,7 @@ def generate_clips(video_path, analysis, clip_format, clip_duration):
     :param analysis: Texto da análise contendo os timestamps.
     :param clip_format: Formato do clipe ("9:16", "1:1", "16:9").
     :param clip_duration: Duração do clipe ("<30s", "30s-59s", etc.).
+    :param full_transcription: A transcrição completa do vídeo.
     :return: Lista de caminhos para os clipes gerados.
     """
     clips = []
@@ -218,10 +251,15 @@ def generate_clips(video_path, analysis, clip_format, clip_duration):
                     end_time = f"{end_seconds // 3600:02}:{(end_seconds % 3600) // 60:02}:{end_seconds % 60:02}"
                 else:
                     end_time = f"{end_seconds // 3600:02}:{(end_seconds % 3600) // 60:02}:{end_seconds % 60:02}"
-                
+                # Pasta para salvar os clipes
+                CLIPS_DIR = "static/clips"
+                if not os.path.exists(CLIPS_DIR):
+                    os.makedirs(CLIPS_DIR)
+
                 # Nome do arquivo do clipe
-                clip_path = f"{DOWNLOADS_DIR}/clip_{i + 1}.mp4"
-                
+                clip_filename = f"clip_{i + 1}.mp4"
+                clip_path = os.path.join(CLIPS_DIR, clip_filename)
+
                 # Comando FFmpeg para cortar e redimensionar o vídeo
                 subprocess.run([
                     "ffmpeg", "-i", video_path,
@@ -234,66 +272,119 @@ def generate_clips(video_path, analysis, clip_format, clip_duration):
                     "-c:a", "aac",
                     clip_path
                 ], check=True)
-                
+
                 clips.append(clip_path)
-        
+
         print(f"Clipes gerados: {clips}")  # Log
         return clips
     except Exception as e:
         print(f"Erro ao gerar clipes: {str(e)}")  # Log
         return []
 
+import glob
+
 # Rota principal (página inicial)
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # Listar todos os arquivos na pasta de clipes
+    clips_dir = os.path.join(app.static_folder, "clips")
+    clip_files = glob.glob(os.path.join(clips_dir, "*.mp4"))
+
+    # Criar uma lista para armazenar os dados dos clipes
+    clips_data = []
+    for clip_file in clip_files:
+        clip_url = f"/static/clips/{os.path.basename(clip_file)}"
+        # Supondo que o nome do arquivo do clipe siga um padrão como "clip_1.mp4"
+        # e que exista um arquivo de transcrição correspondente como "clip_1.txt"
+        transcription_file = clip_file.replace(".mp4", ".txt")
+        try:
+            with open(transcription_file, "r", encoding="utf-8") as f:
+                transcription = f.read()
+        except FileNotFoundError:
+            transcription = "Transcrição não disponível"
+        clips_data.append({"url": clip_url, "transcription": transcription})
+
+    return render_template("index.html", clips_data=clips_data)
 
 # Rota para processar o vídeo
 @app.route("/process", methods=["POST"])
 def process_video():
+    # Obter dados do formulário
     video_url = request.form.get("video_url")
     clip_format = request.form.get("clip_format")  # Novo campo: formato do clipe
     clip_duration = request.form.get("clip_duration")  # Novo campo: duração do clipe
-    
+    user_id = request.form.get("user_id")  # ID do usuário autenticado (pode vir de uma sessão ou token)
+
     if not video_url:
         return jsonify({"error": "URL do vídeo não fornecida"}), 400
 
     try:
         print(f"Processando vídeo: {video_url}")  # Log
-        
+
         # Baixar o vídeo usando yt-dlp
         video_title, video_path = download_youtube_video(video_url)
         if not video_path:
             return jsonify({"error": "Falha ao baixar vídeo"}), 500
-        
+
         # Extrair áudio
         audio_path = extract_audio(video_path, audio_output_path=f"{DOWNLOADS_DIR}/audio.mp3")
         if not audio_path:
             return jsonify({"error": "Falha ao extrair áudio"}), 500
-        
+
         # Transcrever o áudio
         transcription = transcribe_audio(audio_path)
         if not transcription:
             return jsonify({"error": "Falha ao transcrever áudio"}), 500
-        
+
         # Analisar a transcrição com a Gemini API
         analysis = analyze_transcription(transcription)
         if not analysis:
             return jsonify({"error": "Falha ao analisar transcrição"}), 500
-        
+
         # Gerar clipes com base na análise, formato e duração
-        clips = generate_clips(video_path, analysis, clip_format, clip_duration)
-        
-        # Retornar o caminho do vídeo, áudio, transcrição, análise e clipes
-        return jsonify({
-            "message": "Vídeo, áudio, transcrição, análise e clipes processados com sucesso!",
-            "video_title": video_title,
-            "video_path": video_path,
-            "audio_path": audio_path,
-            "transcription": transcription,
-            "analysis": analysis,
-            "clips": clips
-        })
+        clips = generate_clips(video_path, analysis, clip_format, clip_duration, transcription)
+        print(f"Clipes gerados: {clips}")  # Log
+
+        # Salvar os clipes no Supabase
+        clip_data = []
+        for i, clip in enumerate(clips):
+            clip_url = f"/static/clips/{os.path.basename(clip)}"
+            transcription_file = clip.replace(".mp4", ".txt")
+            try:
+                with open(transcription_file, "r", encoding="utf-8") as f:
+                    transcription = f.read()
+                
+                # Salvar o clipe no Supabase
+                save_clip(user_id, clip_url, transcription)
+                
+                # Adicionar os dados do clipe à lista
+                clip_data.append({
+                    "url": clip_url,
+                    "transcription": transcription
+                })
+            except Exception as e:
+                print(f"Erro ao salvar clipe no Supabase: {str(e)}")
+                clip_data.append({
+                    "url": clip_url,
+                    "transcription": "Transcrição não disponível"
+                })
+
+        # Excluir arquivos temporários (vídeo e áudio)
+        try:
+            os.remove(video_path)
+            print(f"Arquivo de vídeo excluído: {video_path}")
+        except Exception as e:
+            print(f"Erro ao excluir arquivo de vídeo: {e}")
+
+        try:
+            os.remove(audio_path)
+            print(f"Arquivo de áudio excluído: {audio_path}")
+        except Exception as e:
+            print(f"Erro ao excluir arquivo de áudio: {e}")
+
+        # Retornar a página inicial com os clipes gerados
+        return render_template("index.html", clips_data=clip_data)
+
     except Exception as e:
         print(f"Erro no servidor: {str(e)}")  # Log
         return jsonify({"error": str(e)}), 500

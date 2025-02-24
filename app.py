@@ -13,7 +13,7 @@ import os
 load_dotenv()
 
 # Inicializar o Flask
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 
 # Pasta para salvar os vídeos baixados
 DOWNLOADS_DIR = "downloads"

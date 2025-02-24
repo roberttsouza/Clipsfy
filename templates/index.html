@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clip Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Clip Generator</h1>
+            <p>Crie clipes curtos dos melhores momentos de vídeos do YouTube.</p>
+        </header>
+
+        <main>
+            <form id="clip-form" method="POST" action="/process">
+                <!-- Campo para o link do vídeo -->
+                <label for="video-url">Link do Vídeo do YouTube:</label>
+                <input type="text" id="video-url" name="video_url" placeholder="Cole o link aqui..." required>
+            
+                <!-- Opções de formato -->
+                <label for="clip-format">Formato do Clip:</label>
+                <select id="clip-format" name="clip_format">
+                    <option value="9:16">Vertical (9:16)</option>
+                    <option value="1:1">Quadrado (1:1)</option>
+                    <option value="16:9">Widescreen (16:9)</option>
+                </select>
+            
+                <!-- Opções de duração -->
+                <label for="clip-duration">Duração dos Clipes:</label>
+                <select id="clip-duration" name="clip_duration">
+                    <option value="<30s">Menos de 30 segundos</option>
+                    <option value="30s-59s">30 a 59 segundos</option>
+                    <option value="90s-3m">1m30s a 3 minutos</option>
+                    <option value="3m-5m">3 a 5 minutos</option>
+                    <option value="5m-10m">5 a 10 minutos</option>
+                    <option value="10m-15m">10 a 15 minutos</option>
+                    <option value="15m-20m">15 a 20 minutos</option>
+                    <option value="20m-25m">20 a 25 minutos</option>
+                </select>
+            
+                <!-- Botão de envio -->
+                <button type="submit">Gerar Clips</button>
+            </form>
+        </main>
+
+        <footer>
+            <p>&copy; 2023 Clip Generator. Todos os direitos reservados.</p>
+        </footer>
+    </div>
+</body>
+</html>

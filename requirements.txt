@@ -2,5 +2,6 @@ Flask==2.3.2
 yt-dlp
 whisper
 google-generativeai
+ffmpeg-python
 python-dotenv
 supabase

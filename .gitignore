@@ -1,0 +1,6 @@
+# Arquivos e pastas a serem ignorados
+downloads/
+.env
+__pycache__/
+*.log
+/static/clips/

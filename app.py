@@ -57,18 +57,20 @@ def save_clip(user_id, clip_url, transcription):
 def download_youtube_video(video_url, output_path="downloads"):
     try:
         print(f"Baixando vídeo: {video_url}")  # Log
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',  # Melhor qualidade disponível
-            'outtmpl': f'{output_path}/%(title)s.%(ext)s',  # Nome do arquivo de saída
-        }
+        ydl_opts = {} # Removed format and outtmpl options for simplicity
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
-            video_title = info.get("title", "Título Indisponível")
-            video_path = ydl.prepare_filename(info)
-            print(f"Vídeo baixado: {video_path}")  # Log
-            return video_title, video_path
+            try:
+                info = ydl.extract_info(video_url, download=True)
+                video_title = info.get("title", "Título Indisponível")
+                video_path = ydl.prepare_filename(info)
+                print(f"Vídeo baixado: {video_path}")  # Log
+                return video_title, video_path
+            except Exception as ydl_error: # Catch yt-dlp specific errors
+                error_message = f"Erro ao baixar vídeo com yt-dlp: {str(ydl_error)}"
+                print(error_message)  # Log yt-dlp error
+                return None, None
     except Exception as e:
-        print(f"Erro ao baixar vídeo: {str(e)}")  # Log
+        print(f"Erro ao baixar vídeo: {str(e)}")  # General error log
         return None, None
 
 # Função para extrair áudio usando FFmpeg

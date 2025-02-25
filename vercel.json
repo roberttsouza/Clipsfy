@@ -22,13 +22,5 @@
       "methods": ["POST"]
     }
   ],
-  "public": false,
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/"
-    }
-  ]
+  "public": false
 }

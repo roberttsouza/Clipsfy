@@ -13,8 +13,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "/templates/index.html",
-      "methods": ["GET"]
+      "dest": "/"
     },
     {
       "src": "/process",

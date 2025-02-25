@@ -4,3 +4,4 @@ downloads/
 __pycache__/
 *.log
 /static/clips/
+.vercel

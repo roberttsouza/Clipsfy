@@ -8,8 +8,8 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import os
 
-
 # Carregar variáveis de ambiente
+import re
 load_dotenv()
 
 # Inicializar o Flask
@@ -223,8 +223,12 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
                     start_time, end_time = timestamp_range.split("-")
                     start_time = start_time.strip()
                     end_time = end_time.strip()
+                    # Validate time format
+                    if not re.match(r'^\d{2}:\d{2}:\d{2}$', start_time) or not re.match(r'^\d{2}:\d{2}:\d{2}$', end_time):
+                        print(f"Invalid timestamp format: {timestamp_range}")
+                        continue
                 except ValueError:
-                    print(f"Erro ao dividir timestamp: {timestamp_range}")
+                    print(f"Error splitting timestamp: {timestamp_range}")
                     continue
                 
                 # Converter timestamps para segundos
@@ -248,9 +252,8 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
                 # Garantir que o end_time não exceda a duração total do vídeo
                 if end_seconds > total_duration:
                     end_seconds = total_duration
-                    end_time = f"{end_seconds // 3600:02}:{(end_seconds % 3600) // 60:02}:{end_seconds % 60:02}"
-                else:
-                    end_time = f"{end_seconds // 3600:02}:{(end_seconds % 3600) // 60:02}:{end_seconds % 60:02}"
+                end_time = f"{int(end_seconds // 3600):02}:{int((end_seconds % 3600) // 60):02}:{int(end_seconds % 60):02}"
+
                 # Pasta para salvar os clipes
                 CLIPS_DIR = "static/clips"
                 if not os.path.exists(CLIPS_DIR):
@@ -270,16 +273,19 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
                     "-preset", "fast",
                     "-crf", "23",
                     "-c:a", "aac",
-                    clip_path
+                clip_path
                 ], check=True)
 
                 clips.append(clip_path)
 
         print(f"Clipes gerados: {clips}")  # Log
         return clips
-    except Exception as e:
-        print(f"Erro ao gerar clipes: {str(e)}")  # Log
+    except subprocess.CalledProcessError as e:
+        print(f"Erro ao executar o comando FFmpeg: {e}")
         return []
+    except Exception as e:
+      print(f"Erro ao gerar clipes: {str(e)}")  # Log
+      return []
 
 import glob
 

@@ -6,10 +6,9 @@ import yt_dlp
 import whisper
 import google.generativeai as genai
 from dotenv import load_dotenv
-import os
+import re
 
 # Carregar variáveis de ambiente
-import re
 load_dotenv()
 
 # Inicializar o Flask
@@ -19,7 +18,6 @@ app = Flask(__name__)
 DOWNLOADS_DIR = "downloads"
 if not os.path.exists(DOWNLOADS_DIR):
     os.makedirs(DOWNLOADS_DIR)
-
 
 # Configurações do Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -81,10 +79,15 @@ def extract_audio(video_path, audio_output_path="audio.mp3"):
         return None
 
 # Função para transcrever o áudio usando Whisper
+import torch
+
 def transcribe_audio(audio_path):
     try:
         print(f"Transcrevendo áudio: {audio_path}")  # Log
-        model = whisper.load_model("base")  # Modelo "base" é suficiente para a maioria dos casos
+        # Determine the device to use
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Load the Whisper model
+        model = whisper.load_model("base", device=device)  # Modelo "base" é suficiente para a maioria dos casos
         result = model.transcribe(audio_path)
         transcription = result["text"]
         print(f"Transcrição concluída: {transcription[:100]}...")  # Log apenas os primeiros 100 caracteres
@@ -103,11 +106,10 @@ def analyze_transcription(transcription):
     try:
         # Configurar a Gemini API
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Prompt aprimorado com categoria de política
-        prompt = f"""
-        Você é um assistente especializado em análise de vídeos. Sua tarefa é analisar a seguinte transcrição de um vídeo e identificar os melhores momentos, classificando-os em categorias específicas. Retorne os momentos identificados juntamente com seus timestamps aproximados.
+        prompt = f"""Você é um assistente especializado em análise de vídeos. Sua tarefa é analisar a seguinte transcrição de um vídeo e identificar os melhores momentos, classificando-os em categorias específicas. Retorne os momentos identificados juntamente com seus timestamps aproximados.
 
         ### Categorias de Momentos:
         1. **Momentos Emocionantes ou Impactantes**:
@@ -175,117 +177,161 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
     :param video_path: Caminho do vídeo original.
     :param analysis: Texto da análise contendo os timestamps.
     :param clip_format: Formato do clipe ("9:16", "1:1", "16:9").
-    :param clip_duration: Duração do clipe ("<30s", "30s-59s", etc.).
-    :param full_transcription: A transcrição completa do vídeo.
-    :return: Lista de caminhos para os clipes gerados.
+    :param clip_duration: Duração do clipe ("short", "medium", "long").
+    :param full_transcription: Transcrição completa do vídeo.
+    :return: Lista de caminhos dos clipes gerados.
     """
     clips = []
-    try:
-        # Mapear o formato para as dimensões do FFmpeg
-        format_mapping = {
-            "9:16": "720x1280",  # Vertical
-            "1:1": "1080x1080",  # Quadrado
-            "16:9": "1920x1080"  # Widescreen
-        }
-        resolution = format_mapping.get(clip_format, "1920x1080")  # Padrão: 16:9
-
-        # Mapear a duração para um intervalo mínimo e máximo em segundos
-        duration_mapping = {
-            "<30s": (1, 30),        # Entre 1 segundo e 30 segundos
-            "30s-59s": (30, 60),    # Entre 30 segundos e 1 minuto
-            "90s-3m": (90, 180),    # Entre 1 minuto e 30 segundos e 3 minutos
-            "3m-5m": (180, 300),    # Entre 3 minutos e 5 minutos
-            "5m-10m": (300, 600),   # Entre 5 minutos e 10 minutos
-            "10m-15m": (600, 900),  # Entre 10 minutos e 15 minutos
-            "15m-20m": (900, 1200), # Entre 15 minutos e 20 minutos
-            "20m-25m": (1200, 1500) # Entre 20 minutos e 25 minutos
-        }
-        min_duration, max_duration = duration_mapping.get(clip_duration, (30, 60))  # Padrão: 30 a 60 segundos
-
-        # Obter a duração total do vídeo
-        total_duration = get_video_duration(video_path)
-        if not total_duration:
-            print("Erro: Não foi possível obter a duração do vídeo.")
-            return []
-
-        # Exemplo de parse simples para extrair timestamps e descrições
-        lines = analysis.split("\n")
-        for i, line in enumerate(lines):
-            if "Timestamp:" in line:
-                # Extrair o intervalo de tempo
-                timestamp_range = line.split("Timestamp:")[1].strip()
-                
-                # Remover caracteres indesejados (como "**")
-                timestamp_range = timestamp_range.replace("**", "").strip()
-                
-                # Dividir o intervalo em start_time e end_time
-                try:
-                    start_time, end_time = timestamp_range.split("-")
-                    start_time = start_time.strip()
-                    end_time = end_time.strip()
-                    # Validate time format
-                    if not re.match(r'^\d{2}:\d{2}:\d{2}$', start_time) or not re.match(r'^\d{2}:\d{2}:\d{2}$', end_time):
-                        print(f"Invalid timestamp format: {timestamp_range}")
-                        continue
-                except ValueError:
-                    print(f"Error splitting timestamp: {timestamp_range}")
-                    continue
-                
-                # Converter timestamps para segundos
-                start_seconds = sum(int(x) * 60 ** i for i, x in enumerate(reversed(start_time.split(":"))))
-                end_seconds = sum(int(x) * 60 ** i for i, x in enumerate(reversed(end_time.split(":"))))
-                
-                # Validar os timestamps
-                if start_seconds >= end_seconds or start_seconds >= total_duration:
-                    print(f"Timestamp inválido: start={start_time}, end={end_time}")
-                    continue
-                
-                # Ajustar o clipe para respeitar a duração mínima e máxima
-                clip_length = end_seconds - start_seconds
-                if clip_length < min_duration:
-                    # Estender o clipe para atingir a duração mínima
-                    end_seconds = start_seconds + min_duration
-                elif clip_length > max_duration:
-                    # Truncar o clipe para respeitar a duração máxima
-                    end_seconds = start_seconds + max_duration
-                
-                # Garantir que o end_time não exceda a duração total do vídeo
-                if end_seconds > total_duration:
-                    end_seconds = total_duration
-                end_time = f"{int(end_seconds // 3600):02}:{int((end_seconds % 3600) // 60):02}:{int(end_seconds % 60):02}"
-
-                # Pasta para salvar os clipes
-                CLIPS_DIR = "static/clips"
-                if not os.path.exists(CLIPS_DIR):
-                    os.makedirs(CLIPS_DIR)
-
-                # Nome do arquivo do clipe
-                clip_filename = f"clip_{i + 1}.mp4"
-                clip_path = os.path.join(CLIPS_DIR, clip_filename)
-
-                # Comando FFmpeg para cortar e redimensionar o vídeo
-                subprocess.run([
-                    "ffmpeg", "-i", video_path,
-                    "-ss", start_time,
-                    "-to", end_time,
-                    "-vf", f"scale={resolution},setsar=1:1",  # Redimensiona e corrige a proporção
-                    "-c:v", "libx264",
-                    "-preset", "fast",
-                    "-crf", "23",
-                    "-c:a", "aac",
-                clip_path
-                ], check=True)
-
-                clips.append(clip_path)
-
-        print(f"Clipes gerados: {clips}")  # Log
-        return clips
-    except subprocess.CalledProcessError as e:
-        print(f"Erro ao executar o comando FFmpeg: {e}")
+    total_duration = get_video_duration(video_path)
+    if not total_duration:
+        print("Erro: Não foi possível obter a duração do vídeo.")
         return []
+
+    # Mapeamento de formatos para resoluções
+    format_to_resolution = {
+        "9:16": "720x1280",  # Vertical
+        "1:1": "1080x1080",  # Quadrado
+        "16:9": "1920x1080"  # Horizontal
+    }
+    resolution = format_to_resolution.get(clip_format, "1920x1080")  # Padrão para 16:9
+
+    # Mapeamento de durações para segundos
+    duration_mapping = {
+        "<30s": (1, 30),       # Entre 1 segundo e 30 segundos
+        "30s-59s": (30, 60),   # Entre 30 segundos e 1 minuto
+        "90s-3m": (90, 180),   # Entre 1 minuto e 30 segundos e 3 minutos
+        "3m-5m": (180, 300),   # Entre 3 minutos e 5 minutos
+        "5m-10m": (300, 600),  # Entre 5 minutos e 10 minutos
+        "10m-15m": (600, 900), # Entre 10 minutos e 15 minutos
+        "15m-20m": (900, 1200),# Entre 15 minutos e 20 minutos
+        "20m-25m": (1200, 1500) # Entre 20 minutos e 25 minutos
+    }
+    min_duration, max_duration = duration_mapping.get(clip_duration, (180, 300))  # Padrão para 3-5 minutos
+
+    # Extrair timestamps da análise
+    pattern = r"Timestamp:\s*(\d{1,2}:\d{2}:\d{2})\s*-\s*(\d{1,2}:\d{2}:\d{2})"
+    matches = re.findall(pattern, analysis)
+    print(f"Timestamps encontrados: {matches}")  # Log dos timestamps encontrados
+
+    # Lista para armazenar os clipes com suas informações
+    clip_segments = []
+
+    for i, (start_time, end_time) in enumerate(matches):
+        try:
+            # Converter timestamps para segundos
+            start_seconds = sum(int(x) * 60 ** (2 - i) for i, x in enumerate(start_time.split(":")))
+            end_seconds = sum(int(x) * 60 ** (2 - i) for i, x in enumerate(end_time.split(":")))
+
+            print(f"Start time: {start_time}, Start seconds: {start_seconds}")  # Log
+            print(f"End time: {end_time}, End seconds: {end_seconds}")  # Log
+
+            # Validar timestamps
+            if start_seconds >= end_seconds or start_seconds >= total_duration:
+                print(f"Timestamp inválido: start={start_time}, end={end_time}")
+                continue
+
+            # Ajustar o clipe para respeitar a duração máxima
+            clip_length = end_seconds - start_seconds
+            # Ajustar o clipe para respeitar a duração mínima e máxima
+            if clip_length < min_duration:
+                end_seconds = min(start_seconds + min_duration, total_duration)
+                clip_length = end_seconds - start_seconds
+            if clip_length > max_duration:
+                end_seconds = start_seconds + max_duration
+
+            # Garantir que o end_time não exceda a duração total do vídeo
+            if end_seconds > total_duration:
+                end_seconds = total_duration
+                start_seconds = max(0, end_seconds - min_duration) # Ajustar start_seconds se necessário
+                
+            clip_length = end_seconds - start_seconds
+
+            # Formatar os timestamps corretamente
+            start_time_formatted = f"{int(start_seconds // 3600):02}:{int((start_seconds % 3600) // 60):02}:{int(start_seconds % 60):02}"
+            end_time_formatted = f"{int(end_seconds // 3600):02}:{int((end_seconds % 3600) // 60):02}:{int(end_seconds % 60):02}"
+
+            # Extrair a categoria do momento (assumindo que a categoria está na linha anterior ao timestamp)
+            categoria = ""
+            try:
+                categoria_pattern = r"Categoria:\s*([^\n]+)"
+                categoria_match = re.search(categoria_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
+                if categoria_match:
+                    categoria = categoria_match.group(1).strip()
+            except:
+                pass
+
+            # Adicionar o segmento à lista
+            clip_segments.append({
+                "start_seconds": start_seconds,
+                "end_seconds": end_seconds,
+                "start_time_formatted": start_time_formatted,
+                "end_time_formatted": end_time_formatted,
+                "categoria": categoria
+            })
+        except Exception as e:
+            print(f"Erro ao processar clipe {i + 1}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    # Ordenar os segmentos por categoria (priorizando "Informações Importantes ou Insights Úteis" e "Momentos Políticos Relevantes")
+    clip_segments.sort(key=lambda x: (x["categoria"] != "Informações Importantes ou Insights Úteis" and x["categoria"] != "Momentos Políticos Relevantes", x["start_seconds"]))
+
+    # Gerar os clipes a partir dos segmentos, evitando sobreposição
+    last_end_seconds = 0
+    try:
+        for i, segment in enumerate(clip_segments):
+            start_seconds = segment["start_seconds"]
+            end_seconds = segment["end_seconds"]
+            start_time_formatted = segment["start_time_formatted"]
+            end_time_formatted = segment["end_time_formatted"]
+
+            # Verificar se o segmento se sobrepõe ao clipe anterior
+            if start_seconds < last_end_seconds:
+                print(f"Segmento {i + 1} sobrepõe o clipe anterior, ignorando.")
+                continue
+
+            # Pasta para salvar os clipes
+            CLIPS_DIR = "static/clips"
+            if not os.path.exists(CLIPS_DIR):
+                os.makedirs(CLIPS_DIR)
+
+            # Nome do arquivo do clipe
+            clip_filename = f"clip_{i + 1}.mp4"
+            clip_path = os.path.join(CLIPS_DIR, clip_filename)
+
+            # Comando FFmpeg para cortar e redimensionar o vídeo
+            ffmpeg_command = [
+                "ffmpeg", "-i", video_path,
+                "-ss", start_time_formatted,
+                "-to", end_time_formatted,
+                "-vf", f"scale={resolution},setsar=1:1",  # Redimensiona e corrige a proporção
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "23",
+                "-c:a", "aac",
+                clip_path
+            ]
+            print(f"Comando FFmpeg: {' '.join(ffmpeg_command)}")  # Log do comando
+
+            try:
+                subprocess.run(ffmpeg_command, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Erro no FFmpeg: {e}")
+                print(f"Código de retorno: {e.returncode}")
+                print(f"Saída: {e.output}")
+                continue
+
+            clips.append(clip_path)
+            last_end_seconds = end_seconds
+
     except Exception as e:
-      print(f"Erro ao gerar clipes: {str(e)}")  # Log
-      return []
+        print(f"Erro ao processar clipe {i + 1}: {str(e)}")
+        print(f"Detalhes do erro: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    print(f"Clipes gerados: {clips}")  # Log
+    return clips
 
 import glob
 

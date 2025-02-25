@@ -4,10 +4,6 @@
     {
       "src": "app.py",
       "use": "@vercel/python"
-    },
-    {
-      "src": "build.sh",
-      "use": "@vercel/shell"
     }
   ],
   "routes": [
@@ -24,6 +20,15 @@
       "src": "/process",
       "dest": "/process",
       "methods": ["POST"]
+    }
+  ],
+  "public": false,
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
     }
   ]
 }

@@ -12,8 +12,9 @@
       "dest": "/static/$1"
     },
     {
-      "src": "/(.*)",
-      "dest": "/"
+      "source": "/(.*)",
+      "destination": "/" ,
+      "methods": ["GET"]
     },
     {
       "src": "/process",

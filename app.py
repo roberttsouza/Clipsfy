@@ -109,35 +109,35 @@ def analyze_transcription(transcription):
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Prompt aprimorado com categoria de política
-        prompt = f"""Você é um assistente especializado em análise de vídeos. Sua tarefa é analisar a seguinte transcrição de um vídeo e identificar os melhores momentos, classificando-os em categorias específicas. Retorne os momentos identificados juntamente com seus timestamps aproximados.
+        prompt = f"""Você é um assistente especializado em análise de vídeos curtos e engajamento. Sua tarefa é analisar a seguinte transcrição de um vídeo e identificar os melhores momentos para recortes, priorizando trechos de alto impacto e retenção. Escolha momentos que sejam envolventes, relevantes e tenham potencial viral.
 
-        ### Categorias de Momentos:
-        1. **Momentos Emocionantes ou Impactantes**:
-           - Eventos que causam forte reação emocional, como discursos inspiradores, cenas dramáticas ou revelações importantes.
-           
-        2. **Momentos Engraçados ou Divertidos**:
-           - Piadas, situações cômicas ou interações que provocam risadas.
-           
-        3. **Informações Importantes ou Insights Úteis**:
-           - Dados relevantes, explicações técnicas, conselhos práticos ou insights que agreguem valor ao conteúdo.
-           
-        4. **Momentos Surpreendentes ou Inesperados**:
-           - Eventos inesperados, reviravoltas ou acontecimentos fora do comum.
+Critérios para Seleção:
+Momentos Emocionantes e Impactantes
 
-        5. **Momentos Políticos Relevantes**:
-           - Discussões sobre políticas públicas, decisões governamentais, discursos de líderes políticos, debates ou análises críticas sobre questões políticas.
-           - Exemplos: Propostas de lei, declarações controversas, promessas eleitorais ou discussões sobre impactos sociais/econômicos.
+Trechos que evocam fortes emoções, como discursos inspiradores, histórias pessoais ou revelações marcantes.
+Momentos Engraçados e Virais
 
-        ### Formato de Resposta:
-        Retorne os momentos identificados no seguinte formato:
-        - Categoria: [Nome da Categoria]
-          - Timestamp: [HH:MM:SS - HH:MM:SS]
-          - Descrição: [Breve descrição do momento]
+Piadas, interações cômicas ou falas espontâneas que tenham alto potencial de compartilhamento.
+Informações Valiosas e Insights Úteis
 
-        ### Transcrição do Vídeo:
-        {transcription}
+Explicações técnicas, curiosidades, dicas práticas ou argumentos sólidos que agreguem valor ao público.
+Momentos de Tensão ou Surpresa
 
-        Por favor, analise a transcrição acima e retorne os momentos mais relevantes nas categorias especificadas.
+Reviravoltas, debates acalorados, falas polêmicas ou qualquer evento inesperado.
+Frases de Efeito e Ganchos Poderosos
+
+Declarações curtas e impactantes que prendem a atenção imediatamente e incentivam a audiência a assistir até o final.
+Formato da Resposta:
+Para cada momento identificado, retorne no seguinte formato:
+
+Categoria: [Nome da Categoria]
+Timestamp: [HH:MM:SS - HH:MM:SS]
+Descrição: [Resumo conciso do momento]
+Trecho de Destaque: ["Frase ou diálogo mais marcante do trecho"]
+Transcrição do Vídeo:
+{transcription}
+
+Por favor, analise a transcrição e forneça os momentos mais relevantes dentro das categorias especificadas. Se possível, priorize momentos que possam ser cortados de forma natural e tenham um bom ritmo para vídeos curtos.
         """
         
         # Gerar resposta
@@ -435,10 +435,14 @@ def process_video():
             print(f"Erro ao excluir arquivo de áudio: {e}")
 
         # Retornar a página inicial com os clipes gerados
+        if not clip_data:
+            return jsonify({"error": "Nenhum clipe adequado foi gerado."}), 500
         return render_template("index.html", clips_data=clip_data)
 
     except Exception as e:
         print(f"Erro no servidor: {str(e)}")  # Log
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 # Executar o servidor Flask

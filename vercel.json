@@ -1,12 +1,1 @@
-{ "rewrites": [{ "source": "/(.*)", "destination": "/" }], 
-
-  "routes": [
-
-    {
-      "src": "/process",
-      "dest": "/process",
-      "methods": ["POST"]
-    }
-  ],
-  "public": false
-}
+{ "rewrites": [{ "source": "/(.*)", "destination": "/" }] }

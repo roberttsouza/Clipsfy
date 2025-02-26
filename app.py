@@ -109,25 +109,30 @@ def analyze_transcription(transcription):
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Prompt aprimorado com categoria de política
-        prompt = f"""Você é um assistente especializado em análise de vídeos curtos e engajamento. Sua tarefa é analisar a seguinte transcrição de um vídeo e identificar os melhores momentos para recortes, priorizando trechos de alto impacto e retenção. Escolha momentos que sejam envolventes, relevantes e tenham potencial viral.
+        prompt = f"""Você é um assistente especializado em análise de vídeos curtos e engajamento. Sua tarefa é analisar a transcrição de um vídeo e identificar os melhores momentos para recortes, garantindo que pelo menos um clipe relevante seja gerado.
 
-Critérios para Seleção:
-Momentos Emocionantes e Impactantes
+### Critérios para Seleção:
+1. **Momentos Emocionantes e Impactantes**  
+   - Discursos inspiradores, histórias pessoais ou revelações marcantes.  
 
-Trechos que evocam fortes emoções, como discursos inspiradores, histórias pessoais ou revelações marcantes.
-Momentos Engraçados e Virais
+2. **Momentos Engraçados e Virais**  
+   - Piadas, interações cômicas ou falas espontâneas que tenham alto potencial de compartilhamento.  
 
-Piadas, interações cômicas ou falas espontâneas que tenham alto potencial de compartilhamento.
-Informações Valiosas e Insights Úteis
+3. **Informações Valiosas e Insights Úteis**  
+   - Explicações técnicas, curiosidades, dicas práticas ou argumentos sólidos que agreguem valor ao público.  
 
-Explicações técnicas, curiosidades, dicas práticas ou argumentos sólidos que agreguem valor ao público.
-Momentos de Tensão ou Surpresa
+4. **Momentos de Tensão ou Surpresa**  
+   - Reviravoltas, debates acalorados, falas polêmicas ou qualquer evento inesperado.  
 
-Reviravoltas, debates acalorados, falas polêmicas ou qualquer evento inesperado.
-Frases de Efeito e Ganchos Poderosos
+5. **Frases de Efeito e Ganchos Poderosos**  
+   - Declarações curtas e impactantes que prendem a atenção imediatamente e incentivam a audiência a assistir até o final.  
 
-Declarações curtas e impactantes que prendem a atenção imediatamente e incentivam a audiência a assistir até o final.
-Formato da Resposta:
+### **IMPORTANTE**  
+- **Sempre retorne pelo menos um clipe**, mesmo que nenhum trecho seja extraordinário.  
+- Caso nenhum momento se encaixe perfeitamente nos critérios acima, **escolha um trecho que tenha um mínimo de engajamento, clareza ou fluidez na conversa**.  
+- **Nunca retorne uma resposta vazia.** Se não houver nada extremamente impactante, **pegue um trecho coerente e informativo**.  
+
+### **Formato da Resposta:**  
 Para cada momento identificado, retorne no seguinte formato:
 
 Categoria: [Nome da Categoria]
@@ -137,7 +142,10 @@ Trecho de Destaque: ["Frase ou diálogo mais marcante do trecho"]
 Transcrição do Vídeo:
 {transcription}
 
-Por favor, analise a transcrição e forneça os momentos mais relevantes dentro das categorias especificadas. Se possível, priorize momentos que possam ser cortados de forma natural e tenham um bom ritmo para vídeos curtos.
+**Transcrição do Vídeo:**  
+{transcription}
+
+Por favor, analise a transcrição e forneça os melhores momentos. **Se não houver momentos excepcionais, selecione ao menos um trecho minimamente interessante e retorne um clipe adequado.**
         """
         
         # Gerar resposta

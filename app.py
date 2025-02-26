@@ -361,6 +361,7 @@ def index():
 # Rota para processar o vídeo
 @app.route("/process", methods=["POST"])
 def process_video():
+    print("Iniciando processamento do vídeo")  # Log
     # Obter dados do formulário
     video_url = request.form.get("video_url")
     clip_format = request.form.get("clip_format")  # Novo campo: formato do clipe
@@ -368,6 +369,7 @@ def process_video():
     user_id = request.form.get("user_id")  # ID do usuário autenticado (pode vir de uma sessão ou token)
 
     if not video_url:
+        print("URL do vídeo não fornecida")  # Log
         return jsonify({"error": "URL do vídeo não fornecida"}), 400
 
     try:
@@ -376,22 +378,30 @@ def process_video():
         # Baixar o vídeo usando yt-dlp
         video_title, video_path = download_youtube_video(video_url)
         if not video_path:
+            print("Falha ao baixar vídeo")  # Log
             return jsonify({"error": "Falha ao baixar vídeo"}), 500
+        print(f"Vídeo baixado com sucesso: {video_path}")  # Log
 
         # Extrair áudio
         audio_path = extract_audio(video_path, audio_output_path=f"{DOWNLOADS_DIR}/audio.mp3")
         if not audio_path:
+            print("Falha ao extrair áudio")  # Log
             return jsonify({"error": "Falha ao extrair áudio"}), 500
+        print(f"Áudio extraído com sucesso: {audio_path}")  # Log
 
         # Transcrever o áudio
         transcription = transcribe_audio(audio_path)
         if not transcription:
+            print("Falha ao transcrever áudio")  # Log
             return jsonify({"error": "Falha ao transcrever áudio"}), 500
+        print(f"Transcrição concluída com sucesso: {transcription[:100]}...")  # Log
 
         # Analisar a transcrição com a Gemini API
         analysis = analyze_transcription(transcription)
         if not analysis:
+            print("Falha ao analisar transcrição")  # Log
             return jsonify({"error": "Falha ao analisar transcrição"}), 500
+        print(f"Análise concluída com sucesso: {analysis[:100]}...")  # Log
 
         # Gerar clipes com base na análise, formato e duração
         clips = generate_clips(video_path, analysis, clip_format, clip_duration, transcription)
@@ -436,7 +446,9 @@ def process_video():
 
         # Retornar a página inicial com os clipes gerados
         if not clip_data:
+            print("Nenhum clipe adequado foi gerado.")  # Log
             return jsonify({"error": "Nenhum clipe adequado foi gerado."}), 500
+        print("Clipes gerados e prontos para exibição")  # Log
         return render_template("index.html", clips_data=clip_data)
 
     except Exception as e:

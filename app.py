@@ -258,13 +258,28 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             start_time_formatted = f"{int(start_seconds // 3600):02}:{int((start_seconds % 3600) // 60):02}:{int(start_seconds % 60):02}"
             end_time_formatted = f"{int(end_seconds // 3600):02}:{int((end_seconds % 3600) // 60):02}:{int(end_seconds % 60):02}"
 
-            # Extrair a categoria do momento (assumindo que a categoria está na linha anterior ao timestamp)
+            # Extrair dados para criar títulos virais
             categoria = ""
+            descricao = ""
+            trecho_destaque = ""
             try:
+                # Extrair categoria
                 categoria_pattern = r"Categoria:\s*([^\n]+)"
                 categoria_match = re.search(categoria_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
                 if categoria_match:
                     categoria = categoria_match.group(1).strip()
+                
+                # Extrair descrição
+                descricao_pattern = r"Descrição:\s*([^\n]+)"
+                descricao_match = re.search(descricao_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
+                if descricao_match:
+                    descricao = descricao_match.group(1).strip()
+                
+                # Extrair trecho de destaque
+                trecho_pattern = r"Trecho de Destaque:\s*\"([^\"]+)\""
+                trecho_match = re.search(trecho_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
+                if trecho_match:
+                    trecho_destaque = trecho_match.group(1).strip()
             except:
                 pass
 
@@ -274,7 +289,9 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
                 "end_seconds": end_seconds,
                 "start_time_formatted": start_time_formatted,
                 "end_time_formatted": end_time_formatted,
-                "categoria": categoria
+                "categoria": categoria,
+                "descricao": descricao,
+                "trecho_destaque": trecho_destaque
             })
         except Exception as e:
             print(f"Erro ao processar clipe {i + 1}: {str(e)}")
@@ -303,8 +320,24 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             if not os.path.exists(CLIPS_DIR):
                 os.makedirs(CLIPS_DIR)
 
-            # Nome do arquivo do clipe
-            clip_filename = f"clip_{i + 1}.mp4"
+            # Gerar título viral para o clipe
+            viral_title = ""
+            if segment.get("trecho_destaque"):
+                # Usar o trecho de destaque se disponível
+                viral_title = segment["trecho_destaque"][:50]  # Limitar tamanho
+            elif segment.get("descricao"):
+                # Usar a descrição se o trecho não estiver disponível
+                viral_title = segment["descricao"][:50]  # Limitar tamanho
+            else:
+                # Usar a categoria como fallback
+                viral_title = segment.get("categoria", f"Momento_Viral_{i + 1}")
+            
+            # Substituir caracteres inválidos para nomes de arquivos
+            safe_title = re.sub(r'[\\/*?:"<>|]', "", viral_title).strip()
+            safe_title = re.sub(r'\s+', "_", safe_title)  # Substituir espaços por underscores
+            
+            # Nome do arquivo do clipe com título viral
+            clip_filename = f"{safe_title}_{i + 1}.mp4"
             clip_path = os.path.join(CLIPS_DIR, clip_filename)
 
             # Comando FFmpeg para cortar e redimensionar o vídeo

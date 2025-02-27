@@ -3,48 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clip Generator</title>
+    <title>Clipsfy - Gerador de Clips</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Clip Generator</h1>
-            <p>Crie clipes curtos dos melhores momentos de vídeos do YouTube.</p>
+            <h1>Clipsfy</h1>
+            <p>Crie clips curtos dos melhores momentos de vídeos</p>
         </header>
 
         <main>
-            <form id="clip-form" method="POST" action="/process">
-                <!-- Campo para o link do vídeo -->
-                <label for="video-url">Link do Vídeo do YouTube:</label>
-                <input type="text" id="video-url" name="video_url" placeholder="Cole o link aqui..." required>
+            <form id="clip-form" method="POST" action="/process" enctype="multipart/form-data">
+                <div class="form-tabs">
+                    <button type="button" class="tab-btn active" data-tab="youtube-tab">Link do YouTube</button>
+                    <button type="button" class="tab-btn" data-tab="file-tab">Arquivo Local</button>
+                </div>
+                
+                <div class="tab-content">
+                    <!-- Tab para YouTube -->
+                    <div class="tab-pane active" id="youtube-tab">
+                        <label for="video-url">Link do Vídeo do YouTube:</label>
+                        <input type="text" id="video-url" name="video_url" placeholder="Cole o link aqui...">
+                    </div>
+                    
+                    <!-- Tab para upload de arquivo -->
+                    <div class="tab-pane" id="file-tab">
+                        <label for="video-file">Selecione um Arquivo de Vídeo:</label>
+                        <div class="file-upload">
+                            <input type="file" id="video-file" name="video_file" accept="video/*">
+                            <div class="file-upload-label">
+                                <span>Clique para selecionar um vídeo</span>
+                                <p id="file-name">Nenhum arquivo selecionado</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             
                 <!-- Opções de formato -->
-                <label for="clip-format">Formato do Clip:</label>
-                <select id="clip-format" name="clip_format">
-                    <option value="9:16">Vertical (9:16)</option>
-                    <option value="1:1">Quadrado (1:1)</option>
-                    <option value="16:9">Widescreen (16:9)</option>
-                </select>
+                <div class="form-group">
+                    <label for="clip-format">Formato do Clip:</label>
+                    <select id="clip-format" name="clip_format">
+                        <option value="9:16">Vertical (9:16)</option>
+                        <option value="1:1">Quadrado (1:1)</option>
+                        <option value="16:9">Widescreen (16:9)</option>
+                    </select>
+                </div>
             
                 <!-- Opções de duração -->
-                <label for="clip-duration">Duração dos Clipes:</label>
-                <select id="clip-duration" name="clip_duration">
-                    <option value="<30s">Menos de 30 segundos</option>
-                    <option value="30s-59s">30 a 59 segundos</option>
-                    <option value="90s-3m">1m30s a 3 minutos</option>
-                    <option value="3m-5m">3 a 5 minutos</option>
-                    <option value="5m-10m">5 a 10 minutos</option>
-                    <option value="10m-15m">10 a 15 minutos</option>
-                </select>
+                <div class="form-group">
+                    <label for="clip-duration">Duração dos Clips:</label>
+                    <select id="clip-duration" name="clip_duration">
+                        <option value="<30s">Menos de 30 segundos</option>
+                        <option value="30s-59s">30 a 59 segundos</option>
+                        <option value="90s-3m">1m30s a 3 minutos</option>
+                        <option value="3m-5m">3 a 5 minutos</option>
+                        <option value="5m-10m">5 a 10 minutos</option>
+                        <option value="10m-15m">10 a 15 minutos</option>
+                    </select>
+                </div>
             
                 <!-- Botão de envio -->
-                <button type="submit">Gerar Clips</button>
+                <button type="submit" class="btn-primary">Gerar Clips</button>
             </form>
 
             <!-- Barra de progresso -->
-            <div class="progress">
-                <div class="progress-bar" id="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            <div class="progress-container">
+                <div class="progress">
+                    <div class="progress-bar" id="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <div id="progress-status">Processando...</div>
             </div>
 
             <!-- Seção para exibir os clipes gerados -->
@@ -53,19 +81,30 @@
                 <div id="clips-container">
                     {% if clips_data %}
                         {% for clip in clips_data %}
-                            <video src="{{ clip.url }}" controls width="300"></video>
-                            <a href="{{ clip.url }}" download="{{ clip.url.split('/')[-1] }}" class="download-link">Download Clip</a>
-                            <p>{{ clip.transcription }}</p>
+                            <div class="clip-card">
+                                <h3 class="clip-title">{{ clip.title }}</h3>
+                                <div class="clip-video">
+                                    <video src="{{ clip.url }}" controls></video>
+                                </div>
+                                <div class="clip-actions">
+                                    <a href="{{ clip.url }}" download="{{ clip.url.split('/')[-1] }}" class="download-link">Download Clip</a>
+                                    <button class="toggle-transcript">Ver Transcrição</button>
+                                </div>
+                                <div class="clip-transcript hidden">
+                                    <h4>Transcrição:</h4>
+                                    <p>{{ clip.transcription }}</p>
+                                </div>
+                            </div>
                         {% endfor %}
                     {% else %}
-                        <p>Nenhum clipe gerado ainda.</p>
+                        <p class="no-clips">Nenhum clipe gerado ainda. Adicione um vídeo para começar!</p>
                     {% endif %}
                 </div>
             </div>
         </main>
 
         <footer>
-            <p>&copy; 2023 Clip Generator. Todos os direitos reservados.</p>
+            <p>&copy; 2023 Clipsfy. Todos os direitos reservados.</p>
         </footer>
     </div>
 

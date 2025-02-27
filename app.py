@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from supabase import create_client, Client
 import os
 import subprocess
@@ -7,6 +7,8 @@ import whisper
 import google.generativeai as genai
 from dotenv import load_dotenv
 import re
+import glob
+import shutil
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -39,13 +41,29 @@ def authenticate_user(email, password_hash):
     return response.data
 
 # Função para salvar clipes no banco de dados
-def save_clip(user_id, clip_url, transcription):
+def save_clip(user_id, clip_url, transcription, title):
     response = supabase.table("clips").insert({
         "user_id": user_id,
         "clip_url": clip_url,
-        "transcription": transcription
+        "transcription": transcription,
+        "title": title
     }).execute()
     return response.data
+
+# Função para limpar a pasta de downloads
+def clean_downloads_folder():
+    try:
+        for file in os.listdir(DOWNLOADS_DIR):
+            file_path = os.path.join(DOWNLOADS_DIR, file)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        print("Pasta de downloads limpa com sucesso")
+        return True
+    except Exception as e:
+        print(f"Erro ao limpar pasta de downloads: {e}")
+        return False
 
 # Função para baixar vídeos do YouTube usando yt-dlp
 def download_youtube_video(video_url, output_path="downloads"):
@@ -63,6 +81,25 @@ def download_youtube_video(video_url, output_path="downloads"):
             return video_title, video_path
     except Exception as e:
         print(f"Erro ao baixar vídeo: {str(e)}")  # Log
+        return None, None
+
+# Função para processar um arquivo de vídeo local
+def process_local_video(file):
+    try:
+        # Verificar se o arquivo é um vídeo
+        allowed_extensions = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
+        if not file.filename.split('.')[-1].lower() in allowed_extensions:
+            print(f"Arquivo não é um vídeo: {file.filename}")
+            return None, None
+        
+        # Salvar o arquivo temporariamente
+        video_path = os.path.join(DOWNLOADS_DIR, file.filename)
+        file.save(video_path)
+        print(f"Vídeo salvo localmente: {video_path}")
+        
+        return file.filename, video_path
+    except Exception as e:
+        print(f"Erro ao processar vídeo local: {str(e)}")
         return None, None
 
 # Função para extrair áudio usando FFmpeg
@@ -187,9 +224,9 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
     :param clip_format: Formato do clipe ("9:16", "1:1", "16:9").
     :param clip_duration: Duração do clipe ("short", "medium", "long").
     :param full_transcription: Transcrição completa do vídeo.
-    :return: Lista de caminhos dos clipes gerados.
+    :return: Lista de dicionários contendo informações dos clipes gerados.
     """
-    clips = []
+    clips_info = []
     total_duration = get_video_duration(video_path)
     if not total_duration:
         print("Erro: Não foi possível obter a duração do vídeo.")
@@ -258,30 +295,36 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             start_time_formatted = f"{int(start_seconds // 3600):02}:{int((start_seconds % 3600) // 60):02}:{int(start_seconds % 60):02}"
             end_time_formatted = f"{int(end_seconds // 3600):02}:{int((end_seconds % 3600) // 60):02}:{int(end_seconds % 60):02}"
 
-            # Extrair dados para criar títulos virais
+            # Extrair dados para criar títulos e descrições
             categoria = ""
             descricao = ""
             trecho_destaque = ""
             try:
-                # Extrair categoria
-                categoria_pattern = r"Categoria:\s*([^\n]+)"
-                categoria_match = re.search(categoria_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
-                if categoria_match:
-                    categoria = categoria_match.group(1).strip()
-                
-                # Extrair descrição
-                descricao_pattern = r"Descrição:\s*([^\n]+)"
-                descricao_match = re.search(descricao_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
-                if descricao_match:
-                    descricao = descricao_match.group(1).strip()
-                
-                # Extrair trecho de destaque
-                trecho_pattern = r"Trecho de Destaque:\s*\"([^\"]+)\""
-                trecho_match = re.search(trecho_pattern, analysis[:analysis.find(f"Timestamp: {start_time} - {end_time}")], re.MULTILINE)
-                if trecho_match:
-                    trecho_destaque = trecho_match.group(1).strip()
-            except:
-                pass
+                # Pesquisar o contexto antes do timestamp atual
+                current_section = analysis.split(f"Timestamp: {start_time} - {end_time}")[0]
+                last_category_index = current_section.rfind("Categoria:")
+                if last_category_index != -1:
+                    section_context = current_section[last_category_index:]
+                    
+                    # Extrair categoria
+                    categoria_pattern = r"Categoria:\s*([^\n]+)"
+                    categoria_match = re.search(categoria_pattern, section_context)
+                    if categoria_match:
+                        categoria = categoria_match.group(1).strip()
+                    
+                    # Extrair descrição
+                    descricao_pattern = r"Descrição:\s*([^\n]+)"
+                    descricao_match = re.search(descricao_pattern, section_context)
+                    if descricao_match:
+                        descricao = descricao_match.group(1).strip()
+                    
+                    # Extrair trecho de destaque
+                    trecho_pattern = r"Trecho de Destaque:\s*\"([^\"]+)\""
+                    trecho_match = re.search(trecho_pattern, section_context)
+                    if trecho_match:
+                        trecho_destaque = trecho_match.group(1).strip()
+            except Exception as e:
+                print(f"Erro ao extrair metadados do clipe: {e}")
 
             # Adicionar o segmento à lista
             clip_segments.append({
@@ -298,8 +341,10 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             import traceback
             traceback.print_exc()
 
-    # Ordenar os segmentos por categoria (priorizando "Informações Importantes ou Insights Úteis" e "Momentos Políticos Relevantes")
-    clip_segments.sort(key=lambda x: (x["categoria"] != "Informações Importantes ou Insights Úteis" and x["categoria"] != "Momentos Políticos Relevantes", x["start_seconds"]))
+    # Ordenar os segmentos por categoria (priorizando categorias importantes)
+    clip_segments.sort(key=lambda x: (x["categoria"] != "Informações Valiosas e Insights Úteis" and 
+                                      x["categoria"] != "Momentos Emocionantes e Impactantes", 
+                                      x["start_seconds"]))
 
     # Gerar os clipes a partir dos segmentos, evitando sobreposição
     last_end_seconds = 0
@@ -320,25 +365,48 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             if not os.path.exists(CLIPS_DIR):
                 os.makedirs(CLIPS_DIR)
 
-            # Gerar título viral para o clipe
-            viral_title = ""
+            # Criar título para o clipe
+            clip_title = ""
             if segment.get("trecho_destaque"):
                 # Usar o trecho de destaque se disponível
-                viral_title = segment["trecho_destaque"][:50]  # Limitar tamanho
+                clip_title = segment["trecho_destaque"]
             elif segment.get("descricao"):
                 # Usar a descrição se o trecho não estiver disponível
-                viral_title = segment["descricao"][:50]  # Limitar tamanho
+                clip_title = segment["descricao"]
             else:
                 # Usar a categoria como fallback
-                viral_title = segment.get("categoria", f"Momento_Viral_{i + 1}")
+                clip_title = segment.get("categoria", f"Momento Interessante {i + 1}")
             
-            # Substituir caracteres inválidos para nomes de arquivos
-            safe_title = re.sub(r'[\\/*?:"<>|]', "", viral_title).strip()
+            # Criar nome seguro para arquivo
+            safe_title = re.sub(r'[\\/*?:"<>|]', "", clip_title).strip()
             safe_title = re.sub(r'\s+', "_", safe_title)  # Substituir espaços por underscores
             
             # Nome do arquivo do clipe com título viral
             clip_filename = f"{safe_title}_{i + 1}.mp4"
             clip_path = os.path.join(CLIPS_DIR, clip_filename)
+
+            # Extrair transcrição específica para este clipe
+            clip_transcription = ""
+            try:
+                # Encontrar a transcrição correspondente ao intervalo de tempo do clipe
+                words_with_timestamps = []
+                
+                # Se tivermos a transcrição completa com timestamps (formato avançado do Whisper)
+                if hasattr(full_transcription, 'segments'):
+                    for segment in full_transcription.segments:
+                        if segment.start >= start_seconds and segment.end <= end_seconds:
+                            words_with_timestamps.append(segment.text)
+                    clip_transcription = " ".join(words_with_timestamps)
+                else:
+                    # Caso contrário, usar o trecho de destaque como transcrição
+                    clip_transcription = segment.get("trecho_destaque", "")
+                
+                if not clip_transcription or len(clip_transcription) < 10:
+                    # Se a transcrição específica não for adequada, usar o texto completo
+                    clip_transcription = full_transcription
+            except Exception as e:
+                print(f"Erro ao extrair transcrição para o clipe: {e}")
+                clip_transcription = full_transcription
 
             # Comando FFmpeg para cortar e redimensionar o vídeo
             ffmpeg_command = [
@@ -356,46 +424,78 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
 
             try:
                 subprocess.run(ffmpeg_command, check=True)
+                
+                # Salvar a transcrição em um arquivo de texto
+                transcription_filename = clip_path.replace(".mp4", ".txt")
+                with open(transcription_filename, "w", encoding="utf-8") as f:
+                    f.write(clip_transcription)
+                
+                # Adicionar informações do clipe à lista de retorno
+                clips_info.append({
+                    "path": clip_path,
+                    "url": f"/static/clips/{os.path.basename(clip_path)}",
+                    "title": clip_title,
+                    "categoria": segment.get("categoria", ""),
+                    "transcription": clip_transcription,
+                    "duration": end_seconds - start_seconds
+                })
+                
+                last_end_seconds = end_seconds
+                
             except subprocess.CalledProcessError as e:
                 print(f"Erro no FFmpeg: {e}")
                 print(f"Código de retorno: {e.returncode}")
                 print(f"Saída: {e.output}")
                 continue
 
-            clips.append(clip_path)
-            last_end_seconds = end_seconds
-
     except Exception as e:
-        print(f"Erro ao processar clipe {i + 1}: {str(e)}")
+        print(f"Erro ao processar clipes: {str(e)}")
         print(f"Detalhes do erro: {str(e)}")
         import traceback
         traceback.print_exc()
 
-    print(f"Clipes gerados: {clips}")  # Log
-    return clips
-
-import glob
+    print(f"Clipes gerados: {len(clips_info)}")  # Log
+    return clips_info
 
 # Rota principal (página inicial)
 @app.route("/")
 def index():
     # Listar todos os arquivos na pasta de clipes
     clips_dir = os.path.join(app.static_folder, "clips")
+    if not os.path.exists(clips_dir):
+        os.makedirs(clips_dir)
+        
     clip_files = glob.glob(os.path.join(clips_dir, "*.mp4"))
 
     # Criar uma lista para armazenar os dados dos clipes
     clips_data = []
     for clip_file in clip_files:
         clip_url = f"/static/clips/{os.path.basename(clip_file)}"
-        # Supondo que o nome do arquivo do clipe siga um padrão como "clip_1.mp4"
-        # e que exista um arquivo de transcrição correspondente como "clip_1.txt"
+        file_name = os.path.basename(clip_file)
+        
+        # Extrair título do nome do arquivo
+        title = file_name.replace(".mp4", "").replace("_", " ")
+        # Remover o número de sequência no final do título (ex: "_1")
+        title = re.sub(r'_\d+$', '', title)
+        # Formatar o título para exibição
+        title = " ".join(word.capitalize() for word in title.split())
+        
+        # Buscar transcrição correspondente
         transcription_file = clip_file.replace(".mp4", ".txt")
         try:
             with open(transcription_file, "r", encoding="utf-8") as f:
                 transcription = f.read()
         except FileNotFoundError:
             transcription = "Transcrição não disponível"
-        clips_data.append({"url": clip_url, "transcription": transcription})
+        
+        clips_data.append({
+            "url": clip_url, 
+            "title": title,
+            "transcription": transcription
+        })
+
+    # Ordenar clips por nome
+    clips_data.sort(key=lambda x: x["title"])
 
     return render_template("index.html", clips_data=clips_data)
 
@@ -405,95 +505,85 @@ def process_video():
     print("Iniciando processamento do vídeo")  # Log
     # Obter dados do formulário
     video_url = request.form.get("video_url")
-    clip_format = request.form.get("clip_format")  # Novo campo: formato do clipe
-    clip_duration = request.form.get("clip_duration")  # Novo campo: duração do clipe
-    user_id = request.form.get("user_id")  # ID do usuário autenticado (pode vir de uma sessão ou token)
+    uploaded_file = request.files.get("video_file")
+    clip_format = request.form.get("clip_format")  # Formato do clipe
+    clip_duration = request.form.get("clip_duration")  # Duração do clipe
+    user_id = request.form.get("user_id", "anônimo")  # ID do usuário
 
-    if not video_url:
-        print("URL do vídeo não fornecida")  # Log
-        return jsonify({"error": "URL do vídeo não fornecida"}), 400
+    # Verificar se pelo menos uma fonte de vídeo foi fornecida
+    if not video_url and not uploaded_file:
+        print("Nenhuma fonte de vídeo fornecida")
+        return jsonify({"error": "Por favor, forneça um link do YouTube ou faça upload de um arquivo de vídeo"}), 400
 
     try:
-        print(f"Processando vídeo: {video_url}")  # Log
-
-        # Baixar o vídeo usando yt-dlp
-        video_title, video_path = download_youtube_video(video_url)
+        # Limpar pasta de downloads antes de processar novo vídeo
+        clean_downloads_folder()
+        
+        # Processar vídeo do YouTube ou vídeo carregado
+        if video_url:
+            print(f"Processando vídeo do YouTube: {video_url}")
+            video_title, video_path = download_youtube_video(video_url)
+        else:
+            print(f"Processando vídeo carregado: {uploaded_file.filename}")
+            video_title, video_path = process_local_video(uploaded_file)
+            
         if not video_path:
-            print("Falha ao baixar vídeo")  # Log
-            return jsonify({"error": "Falha ao baixar vídeo"}), 500
-        print(f"Vídeo baixado com sucesso: {video_path}")  # Log
+            print("Falha ao processar o vídeo")
+            return jsonify({"error": "Falha ao processar o vídeo"}), 500
+        print(f"Vídeo processado com sucesso: {video_path}")
 
         # Extrair áudio
         audio_path = extract_audio(video_path, audio_output_path=f"{DOWNLOADS_DIR}/audio.mp3")
         if not audio_path:
-            print("Falha ao extrair áudio")  # Log
+            print("Falha ao extrair áudio")
             return jsonify({"error": "Falha ao extrair áudio"}), 500
-        print(f"Áudio extraído com sucesso: {audio_path}")  # Log
+        print(f"Áudio extraído com sucesso: {audio_path}")
 
         # Transcrever o áudio
         transcription = transcribe_audio(audio_path)
         if not transcription:
-            print("Falha ao transcrever áudio")  # Log
+            print("Falha ao transcrever áudio")
             return jsonify({"error": "Falha ao transcrever áudio"}), 500
-        print(f"Transcrição concluída com sucesso: {transcription[:100]}...")  # Log
+        print(f"Transcrição concluída com sucesso: {transcription[:100]}...")
 
         # Analisar a transcrição com a Gemini API
         analysis = analyze_transcription(transcription)
         if not analysis:
-            print("Falha ao analisar transcrição")  # Log
+            print("Falha ao analisar transcrição")
             return jsonify({"error": "Falha ao analisar transcrição"}), 500
-        print(f"Análise concluída com sucesso: {analysis[:100]}...")  # Log
+        print(f"Análise concluída com sucesso: {analysis[:100]}...")
 
         # Gerar clipes com base na análise, formato e duração
-        clips = generate_clips(video_path, analysis, clip_format, clip_duration, transcription)
-        print(f"Clipes gerados: {clips}")  # Log
+        clips_info = generate_clips(video_path, analysis, clip_format, clip_duration, transcription)
+        print(f"Clipes gerados: {len(clips_info)}")
 
-        # Salvar os clipes no Supabase
-        clip_data = []
-        for i, clip in enumerate(clips):
-            clip_url = f"/static/clips/{os.path.basename(clip)}"
-            transcription_file = clip.replace(".mp4", ".txt")
-            try:
-                with open(transcription_file, "r", encoding="utf-8") as f:
-                    transcription = f.read()
-                
-                # Salvar o clipe no Supabase
-                save_clip(user_id, clip_url, transcription)
-                
-                # Adicionar os dados do clipe à lista
-                clip_data.append({
-                    "url": clip_url,
-                    "transcription": transcription
-                })
-            except Exception as e:
-                print(f"Erro ao salvar clipe no Supabase: {str(e)}")
-                clip_data.append({
-                    "url": clip_url,
-                    "transcription": "Transcrição não disponível"
-                })
-
-        # Excluir arquivos temporários (vídeo e áudio)
-        try:
-            os.remove(video_path)
-            print(f"Arquivo de vídeo excluído: {video_path}")
-        except Exception as e:
-            print(f"Erro ao excluir arquivo de vídeo: {e}")
-
-        try:
-            os.remove(audio_path)
-            print(f"Arquivo de áudio excluído: {audio_path}")
-        except Exception as e:
-            print(f"Erro ao excluir arquivo de áudio: {e}")
+        # Limpar a pasta de downloads após processar os clipes
+        clean_downloads_folder()
 
         # Retornar a página inicial com os clipes gerados
-        if not clip_data:
-            print("Nenhum clipe adequado foi gerado.")  # Log
+        if not clips_info:
+            print("Nenhum clipe adequado foi gerado.")
             return jsonify({"error": "Nenhum clipe adequado foi gerado."}), 500
-        print("Clipes gerados e prontos para exibição")  # Log
-        return render_template("index.html", clips_data=clip_data)
+            
+        # Preparar dados para exibição
+        clips_data = []
+        for clip_info in clips_info:
+            clips_data.append({
+                "url": clip_info["url"],
+                "title": clip_info["title"],
+                "transcription": clip_info["transcription"]
+            })
+            
+        # Salvar no banco de dados se necessário
+        if user_id != "anônimo":
+            for clip in clips_data:
+                save_clip(user_id, clip["url"], clip["transcription"], clip["title"])
+        
+        print("Clipes gerados e prontos para exibição")
+        return render_template("index.html", clips_data=clips_data)
 
     except Exception as e:
-        print(f"Erro no servidor: {str(e)}")  # Log
+        print(f"Erro no servidor: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

@@ -380,9 +380,11 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             # Criar nome seguro para arquivo
             safe_title = re.sub(r'[\\/*?:"<>|]', "", clip_title).strip()
             safe_title = re.sub(r'\s+', "_", safe_title)  # Substituir espaços por underscores
-            
+            import uuid
+            unique_id = str(uuid.uuid4())
+
             # Nome do arquivo do clipe com título viral
-            clip_filename = f"{safe_title}_{i + 1}.mp4"
+            clip_filename = f"{unique_id}_{safe_title}_{i + 1}.mp4"
             clip_path = os.path.join(CLIPS_DIR, clip_filename)
 
             # Extrair transcrição específica para este clipe

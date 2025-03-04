@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clipsfy - Gerador de Clips</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet"/>
 </head>
 <body>
     <div class="container">
@@ -16,8 +17,12 @@
         <main>
             <form id="clip-form" method="POST" action="/process" enctype="multipart/form-data">
                 <div class="form-tabs">
-                    <button type="button" class="tab-btn active" data-tab="youtube-tab">Link do YouTube</button>
-                    <button type="button" class="tab-btn" data-tab="file-tab">Arquivo Local</button>
+                    <button type="button" class="tab-btn active" data-tab="youtube-tab">
+                        <i class="ri-youtube-line"></i> Link do YouTube
+                    </button>
+                    <button type="button" class="tab-btn" data-tab="file-tab">
+                        <i class="ri-upload-cloud-line"></i> Arquivo Local
+                    </button>
                 </div>
                 
                 <div class="tab-content">
@@ -64,7 +69,9 @@
                 </div>
             
                 <!-- Botão de envio -->
-                <button type="submit" class="btn-primary">Gerar Clips</button>
+                <button type="submit" class="btn-primary">
+                    <i class="ri-scissors-cut-line"></i> Gerar Clips
+                </button>
             </form>
 
             <!-- Barra de progresso -->
@@ -87,8 +94,12 @@
                                     <video src="{{ clip.url }}" controls></video>
                                 </div>
                                 <div class="clip-actions">
-                                    <a href="{{ clip.url }}" download="{{ clip.url.split('/')[-1] }}" class="download-link">Download Clip</a>
-                                    <button class="toggle-transcript">Ver Transcrição</button>
+                                    <a href="{{ clip.url }}" download="{{ clip.url.split('/')[-1] }}" class="download-link">
+                                        <i class="ri-download-line"></i> Download Clip
+                                    </a>
+                                    <button class="toggle-transcript">
+                                        <i class="ri-translate-2"></i> Ver Transcrição
+                                    </button>
                                 </div>
                                 <div class="clip-transcript hidden">
                                     <h4>Transcrição:</h4>

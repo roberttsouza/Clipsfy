@@ -1,3 +1,25 @@
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Local development files
+downloads/
+static/clips/
 # Arquivos e pastas a serem ignorados
 downloads/
 .env

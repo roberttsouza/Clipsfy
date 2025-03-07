@@ -145,29 +145,36 @@ def analyze_transcription(transcription):
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Prompt aprimorado com categoria de política
-        prompt = f"""Você é um assistente especializado em análise de vídeos curtos e engajamento. Sua tarefa é analisar a transcrição de um vídeo e identificar os melhores momentos para recortes, garantindo que pelo menos um clipe relevante seja gerado.
+        # Prompt otimizado para vídeos longos
+        prompt = f"""Você é um assistente especializado em análise de vídeos longos e engajamento. Sua tarefa é analisar sistematicamente a transcrição de um vídeo e identificar os melhores momentos para recortes, garantindo que múltiplos clipes relevantes sejam gerados.
 
-### Critérios para Seleção:
-1. **Momentos Emocionantes e Impactantes**  
-   - Discursos inspiradores, histórias pessoais ou revelações marcantes.  
+### Estratégia de Análise:
+1. **Análise Estratificada**  
+   - Divida o vídeo em segmentos temporais (ex: a cada 10 minutos)  
+   - Identifique os momentos mais relevantes em cada segmento  
 
-2. **Momentos Engraçados e Virais**  
-   - Piadas, interações cômicas ou falas espontâneas que tenham alto potencial de compartilhamento.  
+2. **Critérios de Seleção:**  
+   - **Momentos Emocionantes e Impactantes**  
+     - Discursos inspiradores, histórias pessoais ou revelações marcantes  
+   - **Momentos Engraçados e Virais**  
+     - Piadas, interações cômicas ou falas espontâneas com alto potencial de compartilhamento  
+   - **Informações Valiosas e Insights Úteis**  
+     - Explicações técnicas, curiosidades, dicas práticas ou argumentos sólidos  
+   - **Momentos de Tensão ou Surpresa**  
+     - Reviravoltas, debates acalorados, falas polêmicas ou eventos inesperados  
+   - **Frases de Efeito e Ganchos Poderosos**  
+     - Declarações curtas e impactantes que prendem a atenção  
 
-3. **Informações Valiosas e Insights Úteis**  
-   - Explicações técnicas, curiosidades, dicas práticas ou argumentos sólidos que agreguem valor ao público.  
+3. **Quantidade Mínima de Clipes:**  
+   - Vídeos curtos (<30 min): 1-2 clipes  
+   - Vídeos médios (30-60 min): 3-5 clipes  
+   - Vídeos longos (>60 min): 5-10 clipes  
 
-4. **Momentos de Tensão ou Surpresa**  
-   - Reviravoltas, debates acalorados, falas polêmicas ou qualquer evento inesperado.  
-
-5. **Frases de Efeito e Ganchos Poderosos**  
-   - Declarações curtas e impactantes que prendem a atenção imediatamente e incentivam a audiência a assistir até o final.  
-
-### **IMPORTANTE**  
-- **Sempre retorne pelo menos um clipe**, mesmo que nenhum trecho seja extraordinário.  
-- Caso nenhum momento se encaixe perfeitamente nos critérios acima, **escolha um trecho que tenha um mínimo de engajamento, clareza ou fluidez na conversa**.  
-- **Nunca retorne uma resposta vazia.** Se não houver nada extremamente impactante, **pegue um trecho coerente e informativo**.  
+### **IMPORTANTE:**  
+- **Sempre retorne múltiplos clipes** distribuídos ao longo do vídeo  
+- Priorize momentos que representem diferentes aspectos do conteúdo  
+- Se não houver momentos excepcionais, selecione trechos coerentes e informativos  
+- Nunca retorne uma resposta vazia  
 
 ### **Formato da Resposta:**  
 Para cada momento identificado, retorne no seguinte formato:
@@ -176,13 +183,11 @@ Categoria: [Nome da Categoria]
 Timestamp: [HH:MM:SS - HH:MM:SS]
 Descrição: [Resumo conciso do momento]
 Trecho de Destaque: ["Frase ou diálogo mais marcante do trecho"]
-Transcrição do Vídeo:
-{transcription}
 
 **Transcrição do Vídeo:**  
 {transcription}
 
-Por favor, analise a transcrição e forneça os melhores momentos. **Se não houver momentos excepcionais, selecione ao menos um trecho minimamente interessante e retorne um clipe adequado.**
+Por favor, analise sistematicamente a transcrição e forneça os melhores momentos distribuídos ao longo do vídeo. **Garanta que haja múltiplos clipes relevantes, especialmente para vídeos longos.**
         """
         
         # Gerar resposta

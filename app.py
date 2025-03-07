@@ -258,10 +258,16 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
     }
     min_duration, max_duration = duration_mapping.get(clip_duration, (180, 300))  # Padrão para 3-5 minutos
 
-    # Extrair timestamps da análise
+    # Extrair timestamps da análise (formato mais flexível)
     pattern = r"Timestamp:\s*(\d{1,2}:\d{2}:\d{2})\s*-\s*(\d{1,2}:\d{2}:\d{2})"
     matches = re.findall(pattern, analysis)
-    print(f"Timestamps encontrados: {matches}")  # Log dos timestamps encontrados
+    print(f"Timestamps encontrados (regex): {matches}")  # Log dos timestamps encontrados
+
+    # Tentar um formato alternativo caso o primeiro não funcione
+    if not matches:
+        pattern = r"(\d{1,2}:\d{2}:\d{2})\s*-\s*(\d{1,2}:\d{2}:\d{2})"
+        matches = re.findall(pattern, analysis)
+        print(f"Timestamps encontrados (alternativo): {matches}")
 
     # Lista para armazenar os clipes com suas informações
     clip_segments = []
@@ -385,11 +391,11 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             # Criar nome seguro para arquivo
             safe_title = re.sub(r'[\\/*?:"<>|]', "", clip_title).strip()
             safe_title = re.sub(r'\s+', "_", safe_title)  # Substituir espaços por underscores
-            import uuid
-            unique_id = str(uuid.uuid4())
+            import random
+            unique_id = hex(random.randint(0, 2**32-1))[2:].zfill(8)  # Gera um hexadecimal de 8 caracteres
 
             # Nome do arquivo do clipe com título viral
-            clip_filename = f"{unique_id}_{safe_title}_{i + 1}.mp4"
+            clip_filename = f"{safe_title}_({i + 1})_{unique_id}.mp4"
             clip_path = os.path.join(CLIPS_DIR, clip_filename)
 
             # Extrair transcrição específica para este clipe

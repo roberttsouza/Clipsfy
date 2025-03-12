@@ -90,6 +90,11 @@
                         {% for clip in clips_data %}
                             <div class="clip-card">
                                 <h3 class="clip-title">{{ clip.title }}</h3>
+                                {% if clip.thumbnail %}
+                                <div class="clip-thumbnail">
+                                    <img src="{{ clip.thumbnail }}" alt="Thumbnail do clipe">
+                                </div>
+                                {% endif %}
                                 <div class="clip-video">
                                     <video src="{{ clip.url }}" controls></video>
                                 </div>

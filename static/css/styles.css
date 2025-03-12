@@ -256,6 +256,18 @@ select:focus {
     border-bottom: 1px solid var(--border-color);
 }
 
+.clip-thumbnail {
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.clip-thumbnail img {
+    width: 100%;
+    border-radius: var(--border-radius);
+    aspect-ratio: 16/9;
+    object-fit: cover;
+}
+
 .clip-video {
     width: 100%;
 }

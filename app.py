@@ -117,6 +117,99 @@ def extract_audio(video_path, audio_output_path="audio.mp3"):
 
 # Função para transcrever o áudio usando Whisper
 import torch
+import cv2
+import numpy as np
+import face_recognition
+from PIL import Image
+
+def extract_faces_from_video(video_path, num_faces=2):
+    """Extrai frames com rostos de um vídeo"""
+    try:
+        # Abrir o vídeo
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"Erro ao abrir o vídeo: {video_path}")
+            return None
+
+        face_frames = []
+        frame_count = 0
+        
+        while len(face_frames) < num_faces:
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            # Processar a cada 30 frames para eficiência
+            if frame_count % 30 == 0:
+                # Converter BGR (OpenCV) para RGB (face_recognition)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Detectar rostos e encodings
+                face_locations = face_recognition.face_locations(rgb_frame)
+                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+                
+                for i, (top, right, bottom, left) in enumerate(face_locations):
+                    # Verificar se o rosto não está muito próximo
+                    face_height = bottom - top
+                    face_width = right - left
+                    if face_height < frame.shape[0] * 0.3 and face_width < frame.shape[1] * 0.3:
+                        # Verificar se o rosto é diferente dos já selecionados
+                        is_unique = True
+                        for existing_encoding in face_frames:
+                            if face_recognition.compare_faces([existing_encoding['encoding']], face_encodings[i])[0]:
+                                is_unique = False
+                                break
+                                
+                        if is_unique:
+                            # Adicionar margem de 20% ao redor do rosto
+                            margin = int(max(face_height, face_width) * 0.2)
+                            top = max(0, top - margin)
+                            bottom = min(frame.shape[0], bottom + margin)
+                            left = max(0, left - margin)
+                            right = min(frame.shape[1], right + margin)
+                            
+                            # Recortar e armazenar o frame com o encoding
+                            face_frame = {
+                                'frame': frame[top:bottom, left:right],
+                                'encoding': face_encodings[i]
+                            }
+                            face_frames.append(face_frame)
+            
+            frame_count += 1
+        
+        cap.release()
+        return face_frames
+        
+    except Exception as e:
+        print(f"Erro ao extrair rostos do vídeo: {e}")
+        return None
+
+def create_thumbnail(face_frames, output_path, thumbnail_height=300):
+    """Cria uma thumbnail a partir dos frames com rostos"""
+    try:
+        if not face_frames or len(face_frames) < 2:
+            return False
+            
+        # Redimensionar as imagens para mesma altura mantendo proporção
+        resized_frames = []
+        for face_frame in face_frames:
+            frame = face_frame['frame']
+            height, width = frame.shape[:2]
+            aspect_ratio = width / height
+            new_width = int(thumbnail_height * aspect_ratio)
+            resized_frame = cv2.resize(frame, (new_width, thumbnail_height))
+            resized_frames.append(resized_frame)
+            
+        # Combinar as imagens horizontalmente
+        thumbnail = np.hstack(resized_frames)
+        
+        # Salvar a thumbnail
+        cv2.imwrite(output_path, thumbnail)
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao criar thumbnail: {e}")
+        return False
 
 def transcribe_audio(audio_path):
     try:
@@ -443,6 +536,12 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
                 with open(transcription_filename, "w", encoding="utf-8") as f:
                     f.write(clip_transcription)
                 
+                # Gerar thumbnail para o clipe
+                thumbnail_path = clip_path.replace(".mp4", "_thumbnail.jpg")
+                face_frames = extract_faces_from_video(clip_path)
+                if face_frames:
+                    create_thumbnail(face_frames, thumbnail_path)
+                
                 # Adicionar informações do clipe à lista de retorno
                 clips_info.append({
                     "path": clip_path,
@@ -450,7 +549,8 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
                     "title": clip_title,
                     "categoria": segment.get("categoria", ""),
                     "transcription": clip_transcription,
-                    "duration": end_seconds - start_seconds
+                    "duration": end_seconds - start_seconds,
+                    "thumbnail": f"/static/clips/{os.path.basename(thumbnail_path)}" if os.path.exists(thumbnail_path) else None
                 })
                 
                 last_end_seconds = end_seconds
@@ -501,11 +601,16 @@ def index():
         except FileNotFoundError:
             transcription = "Transcrição não disponível"
         
-        clips_data.append({
-            "url": clip_url, 
-            "title": title,
-            "transcription": transcription
-        })
+            # Verificar se existe thumbnail para o clipe
+            thumbnail_path = clip_file.replace(".mp4", "_thumbnail.jpg")
+            thumbnail_url = f"/static/clips/{os.path.basename(thumbnail_path)}" if os.path.exists(thumbnail_path) else None
+            
+            clips_data.append({
+                "url": clip_url, 
+                "title": title,
+                "transcription": transcription,
+                "thumbnail": thumbnail_url
+            })
 
     # Ordenar clips por nome
     clips_data.sort(key=lambda x: x["title"])

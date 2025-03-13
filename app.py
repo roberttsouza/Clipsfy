@@ -14,7 +14,10 @@ import shutil
 load_dotenv()
 
 # Inicializar o Flask
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='', static_folder='static')
+
+# Configurar caminho para templates
+app.template_folder = 'templates'
 
 # Pasta para salvar os vídeos baixados
 DOWNLOADS_DIR = "downloads"
@@ -214,16 +217,39 @@ def create_thumbnail(face_frames, output_path, thumbnail_height=300):
 def transcribe_audio(audio_path):
     try:
         print(f"Transcrevendo áudio: {audio_path}")  # Log
+        
+        # Verify audio file exists and is not empty
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            print(f"Arquivo de áudio inválido ou vazio: {audio_path}")
+            return None
+
         # Determine the device to use
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Usando dispositivo: {device}")
+
         # Load the Whisper model
-        model = whisper.load_model("base", device=device)  # Modelo "base" é suficiente para a maioria dos casos
+        model = whisper.load_model("base", device=device)
+        
+        # Transcribe with detailed error handling
         result = model.transcribe(audio_path)
+        
+        if not result or "text" not in result:
+            print("Transcrição falhou: resultado inválido do Whisper")
+            return None
+            
         transcription = result["text"]
+        
+        if not transcription or len(transcription.strip()) == 0:
+            print("Transcrição falhou: texto vazio")
+            return None
+            
         print(f"Transcrição concluída: {transcription[:100]}...")  # Log apenas os primeiros 100 caracteres
         return transcription
+        
     except Exception as e:
-        print(f"Erro ao transcrever áudio: {e}")  # Log
+        print(f"Erro ao transcrever áudio: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # Função para analisar a transcrição com a Gemini API usando google-generativeai
@@ -234,62 +260,80 @@ def analyze_transcription(transcription):
         return None
     
     try:
+        # Validate transcription
+        if not transcription or len(transcription.strip()) == 0:
+            print("Erro: Transcrição vazia ou inválida")
+            return None
+
         # Configurar a Gemini API
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Prompt otimizado para vídeos longos
-        prompt = f"""Você é um assistente especializado em análise de vídeos longos e engajamento. Sua tarefa é analisar sistematicamente a transcrição de um vídeo e identificar os melhores momentos para recortes, garantindo que múltiplos clipes relevantes sejam gerados.
+        prompt = f"""Você é um assistente especializado em análise de vídeos longos e engajamento. Sua tarefa is to analyze the transcription systematically and identify the best moments for clips, ensuring multiple relevant clips are generated.
 
-### Estratégia de Análise:
-1. **Análise Estratificada**  
-   - Divida o vídeo em segmentos temporais (ex: a cada 10 minutos)  
-   - Identifique os momentos mais relevantes em cada segmento  
+### Analysis Strategy:
+1. **Stratified Analysis**  
+   - Divide the video into temporal segments (e.g., every 10 minutes)  
+   - Identify the most relevant moments in each segment  
 
-2. **Critérios de Seleção:**  
-   - **Momentos Emocionantes e Impactantes**  
-     - Discursos inspiradores, histórias pessoais ou revelações marcantes  
-   - **Momentos Engraçados e Virais**  
-     - Piadas, interações cômicas ou falas espontâneas com alto potencial de compartilhamento  
-   - **Informações Valiosas e Insights Úteis**  
-     - Explicações técnicas, curiosidades, dicas práticas ou argumentos sólidos  
-   - **Momentos de Tensão ou Surpresa**  
-     - Reviravoltas, debates acalorados, falas polêmicas ou eventos inesperados  
-   - **Frases de Efeito e Ganchos Poderosos**  
-     - Declarações curtas e impactantes que prendem a atenção  
+2. **Selection Criteria:**  
+   - **Emotional and Impactful Moments**  
+     - Inspiring speeches, personal stories, or significant revelations  
+   - **Funny and Viral Moments**  
+     - Jokes, comedic interactions, or spontaneous remarks with high sharing potential  
+   - **Valuable Information and Useful Insights**  
+     - Technical explanations, curiosities, practical tips, or solid arguments  
+   - **Tense or Surprising Moments**  
+     - Plot twists, heated debates, controversial statements, or unexpected events  
+   - **Catchphrases and Powerful Hooks**  
+     - Short, impactful statements that grab attention  
 
-3. **Quantidade Mínima de Clipes:**  
-   - Vídeos curtos (<30 min): 1-2 clipes  
-   - Vídeos médios (30-60 min): 3-5 clipes  
-   - Vídeos longos (>60 min): 5-10 clipes  
+3. **Minimum Number of Clips:**  
+   - Short videos (<30 min): 1-2 clips  
+   - Medium videos (30-60 min): 3-5 clips  
+   - Long videos (>60 min): 5-10 clips  
 
-### **IMPORTANTE:**  
-- **Sempre retorne múltiplos clipes** distribuídos ao longo do vídeo  
-- Priorize momentos que representem diferentes aspectos do conteúdo  
-- Se não houver momentos excepcionais, selecione trechos coerentes e informativos  
-- Nunca retorne uma resposta vazia  
+### **IMPORTANT:**  
+- **Always return multiple clips** distributed throughout the video  
+- Prioritize moments that represent different aspects of the content  
+- If there are no exceptional moments, select coherent and informative segments  
+- Never return an empty response  
 
-### **Formato da Resposta:**  
-Para cada momento identificado, retorne no seguinte formato:
+### **Response Format:**  
+For each identified moment, return in the following format:
 
-Categoria: [Nome da Categoria]
+Category: [Category Name]
 Timestamp: [HH:MM:SS - HH:MM:SS]
-Descrição: [Resumo conciso do momento]
-Trecho de Destaque: ["Frase ou diálogo mais marcante do trecho"]
+Description: [Concise summary of the moment]
+Highlight: ["Most striking phrase or dialogue from the segment"]
 
-**Transcrição do Vídeo:**  
+**Video Transcription:**  
 {transcription}
 
-Por favor, analise sistematicamente a transcrição e forneça os melhores momentos distribuídos ao longo do vídeo. **Garanta que haja múltiplos clipes relevantes, especialmente para vídeos longos.**
+Please systematically analyze the transcription and provide the best moments distributed throughout the video. **Ensure there are multiple relevant clips, especially for long videos.**
         """
         
-        # Gerar resposta
+        # Generate response with error handling
         response = model.generate_content(prompt)
+        
+        if not response or not response.text:
+            print("Erro: Resposta inválida da Gemini API")
+            return None
+            
         analysis = response.text
+        
+        if not analysis or len(analysis.strip()) == 0:
+            print("Erro: Análise vazia")
+            return None
+            
         print(f"Análise concluída: {analysis[:100]}...")  # Log
         return analysis
+        
     except Exception as e:
         print(f"Erro ao chamar a Gemini API: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # Função para obter a duração total do vídeo
@@ -621,91 +665,163 @@ def index():
 @app.route("/process", methods=["POST"])
 def process_video():
     print("Iniciando processamento do vídeo")  # Log
-    # Obter dados do formulário
-    video_url = request.form.get("video_url")
-    uploaded_file = request.files.get("video_file")
-    clip_format = request.form.get("clip_format")  # Formato do clipe
-    clip_duration = request.form.get("clip_duration")  # Duração do clipe
-    user_id = request.form.get("user_id", "anônimo")  # ID do usuário
-
-    # Verificar se pelo menos uma fonte de vídeo foi fornecida
-    if not video_url and not uploaded_file:
-        print("Nenhuma fonte de vídeo fornecida")
-        return jsonify({"error": "Por favor, forneça um link do YouTube ou faça upload de um arquivo de vídeo"}), 400
-
+    
     try:
-        # Limpar pasta de downloads antes de processar novo vídeo
-        clean_downloads_folder()
+        # Obter e validar dados do formulário
+        data = request.get_json() if request.is_json else request.form
+        files = request.files
         
-        # Processar vídeo do YouTube ou vídeo carregado
-        if video_url:
-            print(f"Processando vídeo do YouTube: {video_url}")
-            video_title, video_path = download_youtube_video(video_url)
-        else:
-            print(f"Processando vídeo carregado: {uploaded_file.filename}")
-            video_title, video_path = process_local_video(uploaded_file)
+        video_url = data.get("video_url")
+        uploaded_file = files.get("video_file")
+        clip_format = data.get("clip_format", "16:9")  # Default to 16:9
+        clip_duration = data.get("clip_duration", "3m-5m")  # Default to 3-5 minutes
+        user_id = data.get("user_id", "anônimo")  # Default to anonymous
+
+        # Validate required parameters
+        if not video_url and not uploaded_file:
+            print("Nenhuma fonte de vídeo fornecida")
+            return jsonify({
+                "status": "error",
+                "message": "Por favor, forneça um link do YouTube ou faça upload de um arquivo de vídeo"
+            }), 400
+
+        # Validate clip format
+        valid_formats = ["9:16", "1:1", "16:9"]
+        if clip_format not in valid_formats:
+            print(f"Formato de clipe inválido: {clip_format}")
+            return jsonify({
+                "status": "error", 
+                "message": f"Formato de clipe inválido. Use um dos seguintes: {', '.join(valid_formats)}"
+            }), 400
+
+        # Validate clip duration
+        valid_durations = ["<30s", "30s-59s", "90s-3m", "3m-5m", "5m-10m", "10m-15m", "15m-20m", "20m-25m"]
+        if clip_duration not in valid_durations:
+            print(f"Duração de clipe inválida: {clip_duration}")
+            return jsonify({
+                "status": "error",
+                "message": f"Duração de clipe inválida. Use um dos seguintes: {', '.join(valid_durations)}"
+            }), 400
+
+        try:
+            # Limpar pasta de downloads antes de processar novo vídeo
+            if not clean_downloads_folder():
+                print("Falha ao limpar pasta de downloads")
+                return jsonify({
+                    "status": "error",
+                    "message": "Falha ao limpar pasta de downloads"
+                }), 500
+
+            # Processar vídeo do YouTube ou vídeo carregado
+            if video_url:
+                print(f"Processando vídeo do YouTube: {video_url}")
+                video_title, video_path = download_youtube_video(video_url)
+            else:
+                print(f"Processando vídeo carregado: {uploaded_file.filename}")
+                video_title, video_path = process_local_video(uploaded_file)
+                
+            if not video_path:
+                print("Falha ao processar o vídeo")
+                return jsonify({
+                    "status": "error",
+                    "message": "Falha ao processar o vídeo"
+                }), 500
+            print(f"Vídeo processado com sucesso: {video_path}")
+
+            # Extrair áudio
+            audio_path = extract_audio(video_path, audio_output_path=f"{DOWNLOADS_DIR}/audio.mp3")
+            if not audio_path:
+                print("Falha ao extrair áudio")
+                return jsonify({
+                    "status": "error",
+                    "message": "Falha ao extrair áudio"
+                }), 500
+            print(f"Áudio extraído com sucesso: {audio_path}")
+
+            # Transcrever o áudio
+            print("Iniciando transcrição do áudio...")
+            transcription = transcribe_audio(audio_path)
+            if not transcription:
+                print("Falha ao transcrever áudio: resultado vazio")
+                return jsonify({
+                    "status": "error",
+                    "message": "Falha ao transcrever áudio: resultado vazio"
+                }), 500
+            print(f"Transcrição concluída com sucesso: {transcription[:100]}...")
+            print(f"Tamanho da transcrição: {len(transcription)} caracteres")
+
+            # Analisar a transcrição com a Gemini API
+            print("Iniciando análise da transcrição...")
+            analysis = analyze_transcription(transcription)
+            if not analysis:
+                print("Falha ao analisar transcrição: resultado vazio")
+                return jsonify({
+                    "status": "error",
+                    "message": "Falha ao analisar transcrição: resultado vazio"
+                }), 500
+            print(f"Análise concluída com sucesso: {analysis[:100]}...")
+            print(f"Tamanho da análise: {len(analysis)} caracteres")
+
+            # Gerar clipes com base na análise, formato e duração
+            clips_info = generate_clips(video_path, analysis, clip_format, clip_duration, transcription)
+            print(f"Clipes gerados: {len(clips_info)}")
+
+            # Limpar a pasta de downloads após processar os clipes
+            if not clean_downloads_folder():
+                print("Falha ao limpar pasta de downloads após processamento")
+                return jsonify({
+                    "status": "error",
+                    "message": "Falha ao limpar pasta de downloads"
+                }), 500
+
+            # Retornar os clipes gerados
+            if not clips_info:
+                print("Nenhum clipe adequado foi gerado.")
+                return jsonify({
+                    "status": "error",
+                    "message": "Nenhum clipe adequado foi gerado"
+                }), 500
             
-        if not video_path:
-            print("Falha ao processar o vídeo")
-            return jsonify({"error": "Falha ao processar o vídeo"}), 500
-        print(f"Vídeo processado com sucesso: {video_path}")
-
-        # Extrair áudio
-        audio_path = extract_audio(video_path, audio_output_path=f"{DOWNLOADS_DIR}/audio.mp3")
-        if not audio_path:
-            print("Falha ao extrair áudio")
-            return jsonify({"error": "Falha ao extrair áudio"}), 500
-        print(f"Áudio extraído com sucesso: {audio_path}")
-
-        # Transcrever o áudio
-        transcription = transcribe_audio(audio_path)
-        if not transcription:
-            print("Falha ao transcrever áudio")
-            return jsonify({"error": "Falha ao transcrever áudio"}), 500
-        print(f"Transcrição concluída com sucesso: {transcription[:100]}...")
-
-        # Analisar a transcrição com a Gemini API
-        analysis = analyze_transcription(transcription)
-        if not analysis:
-            print("Falha ao analisar transcrição")
-            return jsonify({"error": "Falha ao analisar transcrição"}), 500
-        print(f"Análise concluída com sucesso: {analysis[:100]}...")
-
-        # Gerar clipes com base na análise, formato e duração
-        clips_info = generate_clips(video_path, analysis, clip_format, clip_duration, transcription)
-        print(f"Clipes gerados: {len(clips_info)}")
-
-        # Limpar a pasta de downloads após processar os clipes
-        clean_downloads_folder()
-
-        # Retornar a página inicial com os clipes gerados
-        if not clips_info:
-            print("Nenhum clipe adequado foi gerado.")
-            return jsonify({"error": "Nenhum clipe adequado foi gerado."}), 500
+            # Preparar dados para exibição
+            clips_data = []
+            for clip_info in clips_info:
+                clips_data.append({
+                    "url": clip_info["url"],
+                    "title": clip_info["title"],
+                    "transcription": clip_info["transcription"],
+                    "thumbnail": clip_info.get("thumbnail"),
+                    "duration": clip_info.get("duration")
+                })
+                
+            # Salvar no banco de dados se necessário
+            if user_id != "anônimo":
+                for clip in clips_data:
+                    save_clip(user_id, clip["url"], clip["transcription"], clip["title"])
             
-        # Preparar dados para exibição
-        clips_data = []
-        for clip_info in clips_info:
-            clips_data.append({
-                "url": clip_info["url"],
-                "title": clip_info["title"],
-                "transcription": clip_info["transcription"]
+            print("Clipes gerados com sucesso")
+            return jsonify({
+                "status": "success",
+                "data": clips_data
             })
-            
-        # Salvar no banco de dados se necessário
-        if user_id != "anônimo":
-            for clip in clips_data:
-                save_clip(user_id, clip["url"], clip["transcription"], clip["title"])
-        
-        print("Clipes gerados e prontos para exibição")
-        return render_template("index.html", clips_data=clips_data)
+
+        except Exception as e:
+            print(f"Erro durante o processamento: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "status": "error",
+                "message": f"Erro durante o processamento: {str(e)}"
+            }), 500
 
     except Exception as e:
         print(f"Erro no servidor: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": f"Erro no servidor: {str(e)}"
+        }), 500
 
 # Executar o servidor Flask
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

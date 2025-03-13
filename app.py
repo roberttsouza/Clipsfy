@@ -126,7 +126,7 @@ import face_recognition
 from PIL import Image
 
 def extract_faces_from_video(video_path, num_faces=2):
-    """Extrai frames com rostos de um vídeo"""
+    """Extrai frames com rostos de um vídeo com expressões distintas"""
     try:
         # Abrir o vídeo
         cap = cv2.VideoCapture(video_path)
@@ -136,14 +136,24 @@ def extract_faces_from_video(video_path, num_faces=2):
 
         face_frames = []
         frame_count = 0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_interval = max(30, total_frames // 100)  # Ajustar intervalo baseado no tamanho do vídeo
+        
+        # Dicionário para armazenar expressões faciais
+        expressions = {
+            'neutral': False,
+            'happy': False,
+            'surprised': False,
+            'angry': False
+        }
         
         while len(face_frames) < num_faces:
             ret, frame = cap.read()
             if not ret:
                 break
                 
-            # Processar a cada 30 frames para eficiência
-            if frame_count % 30 == 0:
+            # Processar a cada frame_interval frames
+            if frame_count % frame_interval == 0:
                 # Converter BGR (OpenCV) para RGB (face_recognition)
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
@@ -164,22 +174,59 @@ def extract_faces_from_video(video_path, num_faces=2):
                                 break
                                 
                         if is_unique:
-                            # Adicionar margem de 20% ao redor do rosto
-                            margin = int(max(face_height, face_width) * 0.2)
-                            top = max(0, top - margin)
-                            bottom = min(frame.shape[0], bottom + margin)
-                            left = max(0, left - margin)
-                            right = min(frame.shape[1], right + margin)
+                            # Detectar expressão facial
+                            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
                             
-                            # Recortar e armazenar o frame com o encoding
-                            face_frame = {
-                                'frame': frame[top:bottom, left:right],
-                                'encoding': face_encodings[i]
-                            }
-                            face_frames.append(face_frame)
-            
+                            for (x, y, w, h) in faces:
+                                # Analisar expressão facial
+                                roi_gray = gray[y:y+h, x:x+w]
+                                roi_color = frame[y:y+h, x:x+w]
+                                
+                                # Detectar sorriso
+                                smile = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
+                                smiles = smile.detectMultiScale(roi_gray, 1.8, 20)
+                                
+                                # Detectar olhos abertos
+                                eye = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+                                eyes = eye.detectMultiScale(roi_gray, 1.1, 4)
+                                
+                                # Classificar expressão
+                                if len(smiles) > 0:
+                                    expression = 'happy'
+                                elif len(eyes) == 0:
+                                    expression = 'angry'
+                                elif len(eyes) > 1:
+                                    expression = 'surprised'
+                                else:
+                                    expression = 'neutral'
+                                
+                                # Selecionar rosto se a expressão for nova
+                                if not expressions[expression]:
+                                    # Adicionar margem de 20% ao redor do rosto
+                                    margin = int(max(face_height, face_width) * 0.2)
+                                    top = max(0, top - margin)
+                                    bottom = min(frame.shape[0], bottom + margin)
+                                    left = max(0, left - margin)
+                                    right = min(frame.shape[1], right + margin)
+                                    
+                                    # Recortar e armazenar o frame com o encoding
+                                    face_frame = {
+                                        'frame': frame[top:bottom, left:right],
+                                        'encoding': face_encodings[i],
+                                        'expression': expression
+                                    }
+                                    face_frames.append(face_frame)
+                                    expressions[expression] = True
+                                    break
+                                    
             frame_count += 1
-        
+            
+            # Se todas as expressões foram capturadas, parar
+            if all(expressions.values()):
+                break
+                
         cap.release()
         return face_frames
         

@@ -384,6 +384,96 @@ Please systematically analyze the transcription and provide the best moments dis
         return None
 
 # Função para obter a duração total do vídeo
+def generate_optimized_title(transcription, category, clip_index, total_clips, description=None, highlight=None):
+    """
+    Gera um título otimizado e único para engajamento usando a API Gemini.
+    
+    :param transcription: Transcrição do clipe.
+    :param category: Categoria do clipe.
+    :param clip_index: Índice do clipe atual.
+    :param total_clips: Total de clipes sendo gerados.
+    :param description: Descrição do clipe (opcional).
+    :param highlight: Trecho de destaque do clipe (opcional).
+    :return: Título otimizado para o clipe.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("Erro: Chave de API da Gemini não encontrada.")
+        return None
+    
+    try:
+        # Validar entrada
+        if not transcription or len(transcription.strip()) == 0:
+            print("Erro: Transcrição vazia ou inválida")
+            return None
+
+        # Limitar transcrição para otimizar o prompt
+        max_transcription_length = 1500
+        if len(transcription) > max_transcription_length:
+            transcription = transcription[:max_transcription_length] + "..."
+
+        # Configurar a Gemini API
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Construir contexto adicional baseado em metadados disponíveis
+        context = ""
+        if category:
+            context += f"Categoria do clipe: {category}. "
+        if description:
+            context += f"Descrição do conteúdo: {description}. "
+        if highlight:
+            context += f"Trecho de destaque: \"{highlight}\". "
+        
+        # Adicionar informação sobre o clipe para aumentar a diversidade
+        diversity_context = f"Este é o clipe {clip_index+1} de {total_clips} do mesmo vídeo. Crie um título ÚNICO e DIFERENTE dos outros clipes."
+        
+        # Prompt otimizado para geração de títulos
+        prompt = f"""Crie um título ÚNICO (fala o título em inglês) extremamente chamativo, otimizado para cliques e engajamento no YouTube, com base na transcrição abaixo. O título deve:
+        
+1. Ser curto e direto (máximo de 50 caracteres, se possível).
+2. Gerar curiosidade e incentivar o clique.
+3. Usar palavras de alto impacto (exemplos: "GENIAL", "PROIBIDO", "MILIONÁRIO", "INACREDITÁVEL", "BLOQUEADO", etc.).
+4. Se conectar com a thumbnail e reforçar a emoção da cena.
+5. Se possível, incluir números para tornar o título mais atrativo.
+6. Se basear na essência exata deste trecho específico do vídeo.
+7. NÃO usar underscores ou caracteres especiais para separar palavras.
+
+{context}
+{diversity_context}
+
+Transcrição do vídeo:
+{transcription}
+
+Por favor, retorne APENAS o título sugerido, sem explicações ou comentários adicionais. NÃO use aspas no título.
+"""
+        
+        # Generate response with error handling
+        response = model.generate_content(prompt)
+        
+        if not response or not response.text:
+            print("Erro: Resposta inválida da Gemini API")
+            return None
+            
+        title = response.text.strip()
+        
+        # Remove aspas, se houver
+        title = title.strip('"\'')
+        
+        # Limitar o tamanho do título
+        if len(title) > 100:
+            title = title[:100]
+            
+        print(f"Título gerado: {title}")
+        return title
+        
+    except Exception as e:
+        print(f"Erro ao gerar título com a Gemini API: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def get_video_duration(video_path):
     """
     Obtém a duração total do vídeo em segundos.
@@ -560,26 +650,60 @@ def generate_clips(video_path, analysis, clip_format, clip_duration, full_transc
             if not os.path.exists(CLIPS_DIR):
                 os.makedirs(CLIPS_DIR)
 
-            # Criar título para o clipe
-            clip_title = ""
-            if segment.get("trecho_destaque"):
-                # Usar o trecho de destaque se disponível
-                clip_title = segment["trecho_destaque"]
-            elif segment.get("descricao"):
-                # Usar a descrição se o trecho não estiver disponível
-                clip_title = segment["descricao"]
-            else:
-                # Usar a categoria como fallback
-                clip_title = segment.get("categoria", f"Momento Interessante {i + 1}")
-            
-            # Criar nome seguro para arquivo
+            # Gerar título otimizado para o clipe usando a API Gemini
+            clip_transcription = ""
+            try:
+                # Encontrar a transcrição correspondente ao intervalo de tempo do clipe
+                words_with_timestamps = []
+                
+                # Se tivermos a transcrição completa com timestamps (formato avançado do Whisper)
+                if hasattr(full_transcription, 'segments'):
+                    for segment in full_transcription.segments:
+                        if segment.start >= start_seconds and segment.end <= end_seconds:
+                            words_with_timestamps.append(segment.text)
+                    clip_transcription = " ".join(words_with_timestamps)
+                else:
+                    # Caso contrário, usar a transcrição completa recortada
+                    clip_transcription = full_transcription
+    
+                if not clip_transcription or len(clip_transcription) < 10:
+                    # Se a transcrição específica não for adequada, usar o texto completo
+                    clip_transcription = full_transcription
+            except Exception as e:
+                print(f"Erro ao extrair transcrição para o clipe: {e}")
+                clip_transcription = full_transcription
+
+            # Contar clipes válidos para contexto de geração de títulos
+            valid_clips_count = len(clip_segments)
+
+            # Gerar título otimizado com a API do Gemini
+            optimized_title = generate_optimized_title(
+                clip_transcription, 
+                segment.get("categoria", ""),
+                i,  # índice do clipe atual
+                valid_clips_count,  # total de clipes sendo gerados
+                segment.get("descricao", ""), 
+                segment.get("trecho_destaque", "")
+            )
+
+            # Usar o título otimizado ou fallback para títulos padrão
+            clip_title = optimized_title if optimized_title else segment.get("trecho_destaque", "")
+            if not clip_title or len(clip_title.strip()) < 3:
+                if segment.get("descricao"):
+                    clip_title = segment["descricao"]
+                else:
+                    clip_title = segment.get("categoria", f"Momento Interessante {i + 1}")
+
+            # Criar nome de arquivo sem underscores ou separadores
             safe_title = re.sub(r'[\\/*?:"<>|]', "", clip_title).strip()
-            safe_title = re.sub(r'\s+', "_", safe_title)  # Substituir espaços por underscores
+            # Não substituir espaços por underscores - mantém os espaços no título
+            # Remover caracteres duplicados de espaço
+            safe_title = re.sub(r'\s+', " ", safe_title)
             import random
             unique_id = hex(random.randint(0, 2**32-1))[2:].zfill(8)  # Gera um hexadecimal de 8 caracteres
 
             # Nome do arquivo do clipe com título viral
-            clip_filename = f"{safe_title}_({i + 1})_{unique_id}.mp4"
+            clip_filename = f"{safe_title} {unique_id}.mp4"
             clip_path = os.path.join(CLIPS_DIR, clip_filename)
 
             # Extrair transcrição específica para este clipe
@@ -864,11 +988,3 @@ def process_video():
         print(f"Erro no servidor: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": f"Erro no servidor: {str(e)}"
-        }), 500
-
-# Executar o servidor Flask
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
